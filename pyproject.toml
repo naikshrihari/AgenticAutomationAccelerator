@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentprobe"
+version = "1.0.0"
+description = "AI Agent Test Automation Accelerator — local, on-premise agent evaluation on Ollama"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shrihari, AI Architect, SmarTek21" }]
+keywords = ["llm", "evaluation", "ollama", "ai-agent", "testing", "on-premise"]
+
+dependencies = [
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Everything needed for the full pipeline as documented in the architecture.
+full = [
+    "tenacity>=8.2",
+    "jinja2>=3.1",
+    "duckdb>=0.10",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "beautifulsoup4>=4.12",
+]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+agentprobe = "agentprobe.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentprobe*"]
+
+[tool.setuptools.package-data]
+"agentprobe.reporting" = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests are function-based; disabling class collection avoids pytest trying to
+# collect the domain model named TestCase.
+python_classes = []

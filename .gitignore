@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# AgentProbe runtime data (golden sets, results DB, generated reports)
+data/
+*.duckdb
+*.db
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

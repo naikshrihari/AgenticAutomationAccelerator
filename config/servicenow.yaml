@@ -1,0 +1,29 @@
+# Target config for a ServiceNow Virtual Agent.
+name: servicenow_virtual_agent
+connector: servicenow
+base_url: https://example.service-now.com/api/sn_va_as_service
+endpoint: /bot/integration
+method: POST
+
+auth:
+  type: basic
+  username_env: SERVICENOW_USER
+  password_env: SERVICENOW_PASSWORD
+
+request_template:
+  requestId: "{session_id}"
+  message:
+    text: "{question}"
+    typed: true
+
+response:
+  answer_path: body[0].value
+  citations_path: body[0].sources
+
+thresholds:
+  pass_score: 0.8
+  partial_score: 0.5
+
+concurrency: 3
+max_retries: 3
+timeout_s: 60

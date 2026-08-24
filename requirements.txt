@@ -1,0 +1,24 @@
+# Core (required)
+pydantic>=2.6
+httpx>=0.27
+pyyaml>=6.0
+
+# LLM structured output helper (optional; a built-in fallback is used if absent)
+instructor>=1.0
+
+# Execution retries (optional; a manual backoff loop is used if absent)
+tenacity>=8.2
+
+# Reporting (optional; a plain-HTML fallback is used if Jinja2 is absent)
+jinja2>=3.1
+
+# Results store (optional; falls back to stdlib sqlite3 if duckdb is absent)
+duckdb>=0.10
+
+# Document parsing (install the ones you need for your source formats)
+pymupdf>=1.24          # PDF
+python-docx>=1.1       # DOCX
+beautifulsoup4>=4.12   # HTML
+
+# Optional: use the official Ollama Python client instead of the OpenAI-compatible HTTP path
+# ollama>=0.3

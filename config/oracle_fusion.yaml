@@ -1,0 +1,32 @@
+# Target config for an Oracle Fusion AI Agent Studio HR Policy Agent.
+# One YAML per agent describes endpoint, auth, request/response mapping, and thresholds.
+name: oracle_fusion_hr_policy
+connector: oracle_fusion
+base_url: https://fusion.example.com/hcmRestApi/agent
+endpoint: /conversations/{session_id}/messages
+session_start_endpoint: /conversations
+session_close_endpoint: /conversations/{session_id}/close
+method: POST
+
+auth:
+  type: bearer
+  token_env: ORACLE_FUSION_TOKEN
+
+# {question} and {session_id} are substituted at send time.
+request_template:
+  message: "{question}"
+  channel: evaluation
+
+response:
+  answer_path: result.message.content
+  citations_path: result.message.citations
+  session_id_path: conversation.id
+
+thresholds:
+  pass_score: 0.8
+  partial_score: 0.5
+  require_groundedness: true
+
+concurrency: 4
+max_retries: 3
+timeout_s: 60

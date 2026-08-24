@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentProbe — {{ summary.target }}</title>
+  <style>
+    :root { --pass:#1a7f37; --partial:#9a6700; --fail:#cf222e; --error:#57606a; --ink:#1f2328; --line:#d0d7de; }
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: var(--ink); margin: 0; padding: 2rem; background:#f6f8fa; }
+    h1 { margin: 0 0 .25rem; } .sub { color:#57606a; margin-top:0; }
+    .cards { display:flex; gap:1rem; flex-wrap:wrap; margin:1.5rem 0; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:1rem 1.25rem; min-width:120px; }
+    .card .n { font-size:1.9rem; font-weight:700; } .card .l { color:#57606a; font-size:.85rem; text-transform:uppercase; letter-spacing:.03em; }
+    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    th, td { text-align:left; padding:.55rem .7rem; border-bottom:1px solid var(--line); vertical-align:top; font-size:.9rem; }
+    th { background:#f6f8fa; }
+    .badge { font-weight:600; padding:.1rem .5rem; border-radius:999px; font-size:.78rem; color:#fff; }
+    .pass{background:var(--pass)} .partial{background:var(--partial)} .fail{background:var(--fail)} .error{background:var(--error)}
+    section { margin:2rem 0; } h2 { border-bottom:2px solid var(--line); padding-bottom:.3rem; }
+    .regress { color: var(--fail); } .fix { color: var(--pass); }
+    details summary { cursor:pointer; color:#0969da; }
+    .muted { color:#57606a; }
+  </style>
+</head>
+<body>
+  <h1>AgentProbe report</h1>
+  <p class="sub">Target: <strong>{{ summary.target }}</strong> · Run <code>{{ summary.run_id }}</code>
+     · {{ summary.started_at.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ '%.0f%%' % (summary.pass_rate * 100) }}</div><div class="l">Pass rate</div></div>
+    <div class="card"><div class="n" style="color:var(--pass)">{{ summary.passed }}</div><div class="l">Pass</div></div>
+    <div class="card"><div class="n" style="color:var(--partial)">{{ summary.partial }}</div><div class="l">Partial</div></div>
+    <div class="card"><div class="n" style="color:var(--fail)">{{ summary.failed }}</div><div class="l">Fail</div></div>
+    <div class="card"><div class="n" style="color:var(--error)">{{ summary.errors }}</div><div class="l">Infra errors</div></div>
+    <div class="card"><div class="n">{{ summary.total }}</div><div class="l">Total cases</div></div>
+  </div>
+  <p class="muted">Infrastructure errors are excluded from the pass rate ({{ summary.scored }} scored cases).</p>
+
+  <section>
+    <h2>By question type</h2>
+    <table>
+      <tr><th>Type</th><th>Pass</th><th>Partial</th><th>Fail</th><th>Error</th></tr>
+      {% for qtype, counts in by_type.items() %}
+      <tr>
+        <td>{{ qtype }}</td>
+        <td>{{ counts.get('pass', 0) }}</td>
+        <td>{{ counts.get('partial', 0) }}</td>
+        <td>{{ counts.get('fail', 0) }}</td>
+        <td>{{ counts.get('error', 0) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  {% if regression %}
+  <section>
+    <h2>Regression vs baseline</h2>
+    {% if regression.regressions %}
+      <p class="regress"><strong>{{ regression.regressions|length }} regression(s)</strong> — cases that got worse:</p>
+      <table>
+        <tr><th>Case</th><th>Type</th><th>Before</th><th>After</th><th>Δ score</th></tr>
+        {% for f in regression.regressions %}
+        <tr><td>{{ f.case_id }}</td><td>{{ f.question_type }}</td>
+            <td><span class="badge {{ f.before.value }}">{{ f.before.value }}</span></td>
+            <td><span class="badge {{ f.after.value }}">{{ f.after.value }}</span></td>
+            <td>{{ '%+.2f' % (f.score_after - f.score_before) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="fix">No regressions. {{ regression.fixes|length }} case(s) improved, {{ regression.unchanged }} unchanged.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>All cases</h2>
+    <table>
+      <tr><th>Case</th><th>Type</th><th>Verdict</th><th>Score</th><th>Detail</th></tr>
+      {% for r in results %}
+      <tr>
+        <td>{{ r.case_id }}</td>
+        <td>{{ r.question_type.value }}</td>
+        <td><span class="badge {{ r.verdict.value }}">{{ r.verdict.value }}</span></td>
+        <td>{{ '%.2f' % r.score }}</td>
+        <td>
+          <details>
+            <summary>view</summary>
+            <p><strong>Q:</strong> {{ r.question }}</p>
+            <p><strong>Expected:</strong> {{ r.expected_answer }}</p>
+            <p><strong>Agent:</strong> {{ r.agent_answer or '—' }}</p>
+            {% if r.fact_coverage.missing %}<p class="regress"><strong>Missing facts:</strong> {{ r.fact_coverage.missing|join('; ') }}</p>{% endif %}
+            <p class="muted"><strong>Judge:</strong> corr {{ '%.2f' % r.judge.correctness }},
+               ground {{ '%.2f' % r.judge.groundedness }}, compl {{ '%.2f' % r.judge.completeness }}
+               — {{ r.rationale }}</p>
+            {% if r.error_kind %}<p class="error"><strong>Error:</strong> {{ r.error_kind }}</p>{% endif %}
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <p class="muted">Generated by AgentProbe · all LLM inference ran locally on Ollama.</p>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Target config for any OpenAI-compatible agent endpoint
+# (a hosted gateway, or another local Ollama model acting as the agent).
+name: openai_compatible_agent
+connector: openai_compat
+base_url: http://localhost:11434
+endpoint: /v1/chat/completions
+method: POST
+
+auth:
+  type: bearer
+  token_env: OPENAI_COMPAT_TOKEN
+
+request_template:
+  model: llama3.1
+  temperature: 0.0
+
+response:
+  answer_path: choices[0].message.content
+
+thresholds:
+  pass_score: 0.75
+  partial_score: 0.5
+
+concurrency: 4
+max_retries: 3
+timeout_s: 90
