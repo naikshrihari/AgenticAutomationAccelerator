@@ -1,32 +1,49 @@
-# Target config for an Oracle Fusion AI Agent Studio HR Policy Agent.
-# One YAML per agent describes endpoint, auth, request/response mapping, and thresholds.
+# ---------------------------------------------------------------------------
+# Oracle Fusion AI Agent Studio target.
+#
+# You only need to fill in THREE things:
+#   1. base_url            -> your Fusion host
+#   2. options.agent_code  -> your AI agent (team) code / name
+#   3. auth credentials    -> set the environment variables named below
+#
+# Everything else uses Oracle's real invokeAsync + status polling contract and
+# usually needs no changes.
+# ---------------------------------------------------------------------------
 name: oracle_fusion_hr_policy
 connector: oracle_fusion
-base_url: https://fusion.example.com/hcmRestApi/agent
-endpoint: /conversations/{session_id}/messages
-session_start_endpoint: /conversations
-session_close_endpoint: /conversations/{session_id}/close
-method: POST
 
+# 1) Your Fusion host, e.g. https://your-env.fa.us2.oraclecloud.com
+base_url: https://YOUR-FUSION-HOST
+
+# 3) Credentials. Oracle Fusion REST APIs accept Basic auth with a user's
+#    username/password. Set these environment variables before running:
+#       Windows:  set ORACLE_FUSION_USER=...   &&  set ORACLE_FUSION_PASSWORD=...
+#    (Prefer a bearer token? use type: bearer + token_env: ORACLE_FUSION_TOKEN)
 auth:
-  type: bearer
-  token_env: ORACLE_FUSION_TOKEN
+  type: basic
+  username_env: ORACLE_FUSION_USER
+  password_env: ORACLE_FUSION_PASSWORD
 
-# {question} and {session_id} are substituted at send time.
-request_template:
-  message: "{question}"
-  channel: evaluation
+# 2) The agent-specific options.
+options:
+  agent_code: YOUR_AGENT_CODE      # the AI agent team code / name
+  conversational: true             # keep conversation context across turns
+  invocation_mode: END_USER
+  poll_interval_s: 2               # how often to check for the answer
+  poll_max_attempts: 60            # give up (timeout) after ~2 minutes
+  # parameters: {}                 # optional custom parameters your agent expects
+  # invoke_path / status_path can be overridden here if your instance differs.
 
+# Where the answer is read from in the status response. Oracle returns the
+# reply in the top-level "answer" field.
 response:
-  answer_path: result.message.content
-  citations_path: result.message.citations
-  session_id_path: conversation.id
+  answer_path: answer
 
 thresholds:
   pass_score: 0.8
   partial_score: 0.5
-  require_groundedness: true
+  require_groundedness: false
 
-concurrency: 4
+concurrency: 2        # Fusion async jobs are heavier; keep parallelism modest
 max_retries: 3
-timeout_s: 60
+timeout_s: 120

@@ -133,6 +133,10 @@ class TargetConfig(BaseModel):
     response: ResponseMapping = Field(default_factory=ResponseMapping)
     thresholds: Thresholds = Field(default_factory=Thresholds)
 
+    # Connector-specific options (e.g. Oracle Fusion agent code, poll settings).
+    # Kept as a free-form dict so per-platform knobs don't clutter the shared model.
+    options: dict[str, Any] = Field(default_factory=dict)
+
     # Execution tuning
     concurrency: int = 4
     max_retries: int = 3

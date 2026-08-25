@@ -82,6 +82,21 @@ Settings come from the environment (all optional; sensible defaults shown):
 Each target agent is one YAML file — see [`config/`](config/) for Oracle
 Fusion, ServiceNow, and OpenAI-compatible examples.
 
+### Oracle Fusion AI Agent Studio
+
+The Oracle connector implements Oracle's real **async** contract — POST
+`…/orchestrator/agent/v2/{agentCode}/invokeAsync` to get a `jobId`, then poll
+`…/status/{jobId}` until the `answer` is ready. To point it at your agent, edit
+`config/oracle_fusion.yaml` and set just three things:
+
+1. `base_url` — your Fusion host
+2. `options.agent_code` — your AI agent (team) code / name
+3. credentials — set `ORACLE_FUSION_USER` / `ORACLE_FUSION_PASSWORD` (Basic auth),
+   or switch to a bearer token
+
+No code changes are needed — session continuity, polling, retries, and error
+classification are handled by the connector.
+
 ## Use — Web UI (no command line)
 
 Prefer a browser to the terminal? There's a Streamlit app that does everything —
