@@ -326,9 +326,10 @@ with tab_evaluate:
         is_oracle = base_target.connector == "oracle_fusion"
         ov_agent_code = ""
         if is_oracle:
+            existing_options = getattr(base_target, "options", {}) or {}
             ov_agent_code = st.text_input(
                 "AI agent code / name",
-                value=str(base_target.options.get("agent_code", "")),
+                value=str(existing_options.get("agent_code", "")),
             )
 
         auth_type = base_target.auth.type
@@ -350,6 +351,8 @@ with tab_evaluate:
             if ov_base_url:
                 target.base_url = ov_base_url
             if is_oracle and ov_agent_code:
+                if getattr(target, "options", None) is None:
+                    target.options = {}
                 target.options["agent_code"] = ov_agent_code
             if ov_username:
                 target.auth.username = ov_username
