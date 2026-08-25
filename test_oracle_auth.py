@@ -72,8 +72,9 @@ body = {"message": QUESTION, "conversational": True, "conversationId": None,
         "invocationMode": "END_USER", "parameters": {}}
 inv = requests.post(invoke_url, headers=auth, json=body, timeout=60)
 show("invokeAsync", inv)
-if inv.status_code != 200:
-    raise SystemExit("invokeAsync failed — see status above (401 = token issue).")
+# 202 Accepted is the correct async success code; 200 also fine. 401 = token issue.
+if inv.status_code not in (200, 202):
+    raise SystemExit(f"invokeAsync failed (HTTP {inv.status_code}) — 401 = token issue.")
 
 job_id = inv.json().get("jobId") or inv.json().get("id")
 print(f"\njobId = {job_id}")
