@@ -1,111 +1,110 @@
-"""Standalone test for the Oracle Fusion AI Agent Studio API.
+"""Full 3-step test for the Oracle Fusion AI Agent Studio API.
+
+Runs the real flow and prints the COMPLETE responses so we can see exactly
+where the answer text is (or why it's empty):
+
+    1. get a bearer token   (paste one, or fetch via OAuth2 client creds)
+    2. invokeAsync          -> jobId
+    3. poll status          -> full JSON, including the 'answer' field
 
 Edit the values below and run:  python test_oracle_auth.py
-
-Supports three auth modes — set AUTH_MODE to whichever you can use:
-
-  "basic"   -> username + password (only works for local, non-SSO accounts)
-  "token"   -> paste a Bearer token you already have
-  "oauth2"  -> fetch a Bearer token from IDCS/IAM using client credentials
-
-It sends one invokeAsync request and prints exactly what Oracle returns, so you
-can see whether auth works (jobId) or is rejected (401). Needs only `requests`.
+Needs only `requests`  (pip install requests).
 """
 
 import base64
 import json
+import time
 
-import requests  # pip install requests
+import requests
 
 # ---------------------------------------------------------------------------
-# COMMON — always fill these in
+# FILL THESE IN
 # ---------------------------------------------------------------------------
 BASE_URL   = "https://ejfh-dev4.fa.us6.oraclecloud.com"
 AGENT_CODE = "HR_POLICY_WORKFLOW_AGENT_V35_WITHOUT_CHATSTORE"
+QUESTION   = "What is the sick leave policy?"
 
-# Which auth to use: "basic" | "token" | "oauth2"
-AUTH_MODE  = "basic"
+# How to get the bearer token: "token" (paste one) or "oauth2" (client creds)
+AUTH_MODE  = "token"
 
-# --- for AUTH_MODE = "basic" ---
-USERNAME   = "your.username"
-PASSWORD   = "your.password"
+# --- AUTH_MODE = "token": paste the access_token from the tokenrelay call ---
+BEARER_TOKEN = "paste-access_token-here"
 
-# --- for AUTH_MODE = "token" ---
-BEARER_TOKEN = "paste-a-token-here"
-
-# --- for AUTH_MODE = "oauth2" (fetch a token from IDCS/IAM) ---
+# --- AUTH_MODE = "oauth2" ---
 TOKEN_URL     = "https://idcs-XXXX.identity.oraclecloud.com/oauth2/v1/token"
 CLIENT_ID     = "your-client-id"
 CLIENT_SECRET = "your-client-secret"
-SCOPE         = "urn:opc:resource:consumer::all"   # ask your admin for the exact scope
+SCOPE         = "urn:opc:resource:consumer::all"
+
+STATUS_INVOCATION_MODE = "ADMIN"    # the status poll uses ?invocationMode=ADMIN
 # ---------------------------------------------------------------------------
 
 
-def get_oauth2_token() -> str:
-    """Client-credentials grant against IDCS/IAM; returns an access token."""
-    basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
-    resp = requests.post(
-        TOKEN_URL,
-        headers={
-            "Authorization": f"Basic {basic}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={"grant_type": "client_credentials", "scope": SCOPE},
-        timeout=60,
-    )
-    print(f"Token endpoint HTTP {resp.status_code}")
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+def get_token() -> str:
+    if AUTH_MODE == "token":
+        return BEARER_TOKEN
+    if AUTH_MODE == "oauth2":
+        basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+        r = requests.post(
+            TOKEN_URL,
+            headers={"Authorization": f"Basic {basic}",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={"grant_type": "client_credentials", "scope": SCOPE}, timeout=60)
+        r.raise_for_status()
+        return r.json()["access_token"]
+    raise SystemExit(f"Unknown AUTH_MODE {AUTH_MODE!r}")
 
 
-# Build the Authorization header for the chosen mode.
-if AUTH_MODE == "basic":
-    token = base64.b64encode(f"{USERNAME}:{PASSWORD}".encode()).decode()
-    auth_header = f"Basic {token}"
-elif AUTH_MODE == "token":
-    auth_header = f"Bearer {BEARER_TOKEN}"
-elif AUTH_MODE == "oauth2":
-    auth_header = f"Bearer {get_oauth2_token()}"
-else:
-    raise SystemExit(f"Unknown AUTH_MODE: {AUTH_MODE!r}")
+def show(title, resp):
+    print(f"\n===== {title} — HTTP {resp.status_code} =====")
+    try:
+        print(json.dumps(resp.json(), indent=2)[:4000])
+    except ValueError:
+        print(resp.text[:2000])
 
-url = f"{BASE_URL}/api/fusion-ai/orchestrator/agent/v2/{AGENT_CODE}/invokeAsync"
-headers = {"Authorization": auth_header, "Content-Type": "application/json"}
-body = {
-    "message": "Hello, this is a connection test.",
-    "conversational": True,
-    "conversationId": None,
-    "invocationMode": "END_USER",
-    "parameters": {},
-}
 
-print(f"\nAUTH_MODE={AUTH_MODE}")
-print(f"POST {url}\n")
+token = get_token()
+auth = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-try:
-    resp = requests.post(url, headers=headers, json=body, timeout=60)
-except Exception as exc:
-    print(f"Could not reach the server: {exc}")
-    raise SystemExit(1)
+# --- Step 2: invokeAsync ---------------------------------------------------
+invoke_url = f"{BASE_URL}/api/fusion-ai/orchestrator/agent/v2/{AGENT_CODE}/invokeAsync"
+body = {"message": QUESTION, "conversational": True, "conversationId": None,
+        "invocationMode": "END_USER", "parameters": {}}
+inv = requests.post(invoke_url, headers=auth, json=body, timeout=60)
+show("invokeAsync", inv)
+if inv.status_code != 200:
+    raise SystemExit("invokeAsync failed — see status above (401 = token issue).")
 
-print(f"HTTP status: {resp.status_code}\n")
-try:
-    print("Response body:")
-    print(json.dumps(resp.json(), indent=2))
-except ValueError:
-    print("Response text:")
-    print(resp.text[:2000])
+job_id = inv.json().get("jobId") or inv.json().get("id")
+print(f"\njobId = {job_id}")
+if not job_id:
+    raise SystemExit("No jobId returned — cannot poll status.")
 
-print()
-if resp.status_code == 200:
-    print("SUCCESS - auth works. Look for a 'jobId' above.")
-elif resp.status_code == 401:
-    print("401 UNAUTHORIZED - this auth was rejected. If you used 'basic', the API "
-          "likely needs a Bearer token: switch AUTH_MODE to 'token' or 'oauth2'.")
-elif resp.status_code == 403:
-    print("403 FORBIDDEN - auth accepted, but this identity lacks permission to "
-          "invoke the agent. Ask an admin to grant the invocation role/scope.")
-elif resp.status_code == 404:
-    print("404 NOT FOUND - check BASE_URL and AGENT_CODE.")
-else:
-    print(f"Unexpected status {resp.status_code} - see body above.")
+# --- Step 3: poll status ---------------------------------------------------
+status_url = f"{BASE_URL}/api/fusion-ai/orchestrator/agent/v2/{AGENT_CODE}/status/{job_id}"
+params = {"invocationMode": STATUS_INVOCATION_MODE}
+
+final = None
+for attempt in range(60):
+    st = requests.get(status_url, headers=auth, params=params, timeout=60)
+    data = st.json()
+    state = str(data.get("status", "")).upper()
+    print(f"poll {attempt + 1}: status = {state or '(none)'}")
+    if state in {"COMPLETE", "COMPLETED", "SUCCESS", "SUCCEEDED", "FAILED", "ERROR"}:
+        final = st
+        break
+    time.sleep(2)
+
+if final is None:
+    raise SystemExit("Job never reached a terminal status (timed out).")
+
+show("FINAL status", final)
+
+# --- Where is the answer? --------------------------------------------------
+data = final.json()
+print("\n----- SUMMARY -----")
+print("top-level keys:", list(data.keys()))
+print("answer field  :", repr(data.get("answer")))
+print("error field   :", repr(data.get("error")))
+print("\nIf 'answer' is empty but there IS text somewhere above, tell me which "
+      "field holds it and I'll map the connector to read from there.")
