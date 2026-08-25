@@ -22,6 +22,10 @@ from ..models import Chunk, Difficulty, QuestionType, TestCase
 
 logger = logging.getLogger(__name__)
 
+# Cap on how much business-requirements text is injected into each prompt, so a
+# long BRD does not overflow a small model's context window.
+_MAX_REQUIREMENTS_CHARS = 6000
+
 # The mix of question types requested per chunk. Out-of-scope questions
 # deliberately ask something the chunk cannot answer, to test refusal.
 DEFAULT_TYPE_MIX: tuple[QuestionType, ...] = (
@@ -70,6 +74,7 @@ class CaseGenerator:
         settings: Optional[Settings] = None,
         type_mix: Iterable[QuestionType] = DEFAULT_TYPE_MIX,
         max_workers: int = 1,
+        requirements: Optional[str] = None,
     ):
         self.settings = settings or Settings.from_env()
         self.client = client or OllamaClient(self.settings, model=self.settings.generation_model)
@@ -77,6 +82,11 @@ class CaseGenerator:
         # How many chunks to process concurrently. Ollama serves requests in
         # parallel, so a small pool overlaps generation and cuts wall-clock time.
         self.max_workers = max(1, max_workers)
+        # Optional business-requirements context. When present, the generator is
+        # steered to prioritise questions that verify these requirements wherever
+        # the source section is relevant to them. Kept bounded so it doesn't blow
+        # the context window on small models.
+        self.requirements = (requirements or "").strip()[:_MAX_REQUIREMENTS_CHARS] or None
 
     def generate_for_chunk(self, chunk: Chunk) -> list[TestCase]:
         """Produce one test case per configured question type for a chunk."""
@@ -112,7 +122,16 @@ class CaseGenerator:
 
     # -- internals -------------------------------------------------------- #
     def _generate_one(self, chunk: Chunk, qtype: QuestionType) -> _GeneratedCase:
+        requirements_block = ""
+        if self.requirements:
+            requirements_block = (
+                "BUSINESS REQUIREMENTS (prioritise questions that verify the agent "
+                "meets these, wherever this source section is relevant to them; the "
+                "expected answer must still be grounded ONLY in the source section):\n"
+                f"\"\"\"\n{self.requirements}\n\"\"\"\n\n"
+            )
         user = (
+            f"{requirements_block}"
             f"SOURCE SECTION (document: {chunk.document}, section: {chunk.section or 'n/a'}):\n"
             f"\"\"\"\n{chunk.text}\n\"\"\"\n\n"
             f"Write {_INSTRUCTIONS[qtype]}.\n"

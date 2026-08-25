@@ -102,6 +102,19 @@ download any saved set as CSV), and **③ Evaluate an agent** (run a golden set
 against a target config and view the HTML report inline). Model and Ollama
 settings are in the sidebar, with a one-click "Test Ollama connection" button.
 
+### Optional: steer generation with a business-requirements file
+
+Both the UI and CLI accept an **optional business-requirements document** (BRD).
+When provided, the generator prioritises questions that verify those
+requirements wherever a source section is relevant — while keeping every
+expected answer grounded strictly in the source documents. Omit it and
+generation proceeds from the documents alone.
+
+- **UI:** use the "Business requirements (optional)" uploader on the Generate tab.
+- **CLI:** `agentprobe generate --docs .\documents --requirements .\brd.pdf`
+
+The BRD can be any supported format (PDF, DOCX, HTML, Markdown, TXT).
+
 ## Use — Command line
 
 ```bash

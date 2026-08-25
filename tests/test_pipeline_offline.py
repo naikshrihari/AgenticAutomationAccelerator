@@ -98,6 +98,42 @@ def test_regression_differ_flags_flips():
     assert report.fixes[0].case_id == "b"
 
 
+def test_requirements_are_optional_and_injected():
+    """The generator injects BRD context only when it is provided."""
+    from agentprobe.generation.generator import CaseGenerator
+    from agentprobe.models import Chunk, QuestionType
+
+    chunk = Chunk(chunk_id="c1", document="d.md", section="Leave", text="20 days annual leave.")
+
+    class _CapturingClient:
+        def __init__(self):
+            self.messages = None
+
+        def structured(self, messages, schema, **kw):
+            self.messages = messages
+            from agentprobe.generation.generator import _GeneratedCase
+
+            return _GeneratedCase(question="q", expected_answer="a", required_facts=["x"])
+
+    # Without requirements: no BRD block in the prompt.
+    gen = CaseGenerator(client=_CapturingClient(), type_mix=[QuestionType.FACTUAL])
+    gen.settings = type("S", (), {"generation_model": "m", "generation_temperature": 0.0})()
+    gen.generate_for_chunk(chunk)
+    assert "BUSINESS REQUIREMENTS" not in gen.client.messages[-1]["content"]
+
+    # With requirements: the BRD text is present.
+    gen2 = CaseGenerator(
+        client=_CapturingClient(),
+        type_mix=[QuestionType.FACTUAL],
+        requirements="Agent must never disclose salaries.",
+    )
+    gen2.settings = type("S", (), {"generation_model": "m", "generation_temperature": 0.0})()
+    gen2.generate_for_chunk(chunk)
+    prompt = gen2.client.messages[-1]["content"]
+    assert "BUSINESS REQUIREMENTS" in prompt
+    assert "never disclose salaries" in prompt
+
+
 def test_results_store_roundtrip(tmp_path):
     from agentprobe.models import RunSummary
     from agentprobe.reporting.store import ResultsStore

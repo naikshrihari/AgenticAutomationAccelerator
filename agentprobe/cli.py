@@ -26,6 +26,18 @@ from .models import TestCase
 from .pipeline import Pipeline
 
 
+def _load_requirements(path: Optional[str]) -> Optional[str]:
+    """Read an optional business-requirements file into plain text.
+
+    Accepts any supported document format (PDF, DOCX, HTML, Markdown, TXT).
+    """
+    if not path:
+        return None
+    from .ingestion.loaders import load_document
+
+    return load_document(path).text
+
+
 def _load_seeds(path: Optional[str]) -> list[TestCase]:
     if not path:
         return []
@@ -52,6 +64,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         limit=args.limit,
         max_workers=args.workers,
         type_mix=type_mix,
+        requirements=_load_requirements(args.requirements),
     )
     print(f"Generated golden set with {len(cases)} approved cases -> {pipeline.settings.golden_dir}")
     return 0
@@ -70,7 +83,11 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 
 def cmd_all(args: argparse.Namespace) -> int:
     pipeline = Pipeline(Settings.from_env())
-    cases = pipeline.build_golden_set(args.docs, seed_cases=_load_seeds(args.seeds))
+    cases = pipeline.build_golden_set(
+        args.docs,
+        seed_cases=_load_seeds(args.seeds),
+        requirements=_load_requirements(args.requirements),
+    )
     target = TargetConfig.from_yaml(args.target)
     summary = pipeline.evaluate(target, cases=cases)
     _print_summary(summary, pipeline.settings)
@@ -107,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--limit", type=int, help="Only use the first N chunks (quick trial on big docs)")
     g.add_argument("--workers", type=int, default=1, help="Chunks to generate concurrently (default 1)")
     g.add_argument("--types", help="Comma-separated question types to generate, e.g. 'factual,edge_case'")
+    g.add_argument("--requirements", help="Optional business-requirements file (PDF/DOCX/MD/TXT) to steer generation")
     g.set_defaults(func=cmd_generate)
 
     e = sub.add_parser("evaluate", help="Run the golden set against a target")
@@ -120,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--docs", required=True)
     a.add_argument("--target", required=True)
     a.add_argument("--seeds")
+    a.add_argument("--requirements", help="Optional business-requirements file to steer generation")
     a.add_argument("--fail-under", type=float)
     a.set_defaults(func=cmd_all)
     return parser

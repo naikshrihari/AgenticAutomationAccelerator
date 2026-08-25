@@ -79,6 +79,19 @@ def ingest_uploads(files, chunk_size: int, settings: Settings):
     return tag_chunks(chunks)
 
 
+def extract_requirements(req_file) -> str | None:
+    """Read an optional uploaded business-requirements file into plain text."""
+    if req_file is None:
+        return None
+    tmp = Path(tempfile.mkdtemp(prefix="agentprobe_req_"))
+    dest = tmp / req_file.name
+    dest.write_bytes(req_file.getbuffer())
+    if dest.suffix.lower() not in SUPPORTED_SUFFIXES:
+        st.warning(f"Unsupported requirements file type: {req_file.name} — ignored.")
+        return None
+    return clean_text(load_document(dest).text)
+
+
 def cases_to_records(cases) -> list[dict]:
     """Flatten test cases into rows for a table / CSV."""
     return [
@@ -154,6 +167,14 @@ with tab_generate:
         accept_multiple_files=True,
     )
 
+    req_file = st.file_uploader(
+        "Business requirements (optional)",
+        type=[s.lstrip(".") for s in SUPPORTED_SUFFIXES],
+        accept_multiple_files=False,
+        help="Optional. If provided, questions are steered toward verifying these "
+             "business requirements. Expected answers stay grounded in the source documents.",
+    )
+
     col1, col2, col3 = st.columns(3)
     with col1:
         types = st.multiselect(
@@ -200,12 +221,17 @@ with tab_generate:
                      f"Generating up to **{len(chunks) * len(types)}** questions "
                      f"({len(types)} type(s) each)…")
 
+            requirements = extract_requirements(req_file)
+            if requirements:
+                st.write(f"🎯 Steering questions with business requirements ({len(requirements)} chars).")
+
             client = OllamaClient(settings, model=settings.generation_model)
             generator = CaseGenerator(
                 client=client,
                 settings=settings,
                 type_mix=[QuestionType(t) for t in types],
                 max_workers=int(workers),
+                requirements=requirements,
             )
 
             progress = st.progress(0.0)
