@@ -35,11 +35,13 @@ options:
   invocation_mode: END_USER        # used on invokeAsync
   status_invocation_mode: ADMIN    # used on the status poll (?invocationMode=ADMIN)
   conversational: true
-  poll_interval_s: 2
-  poll_max_attempts: 60
+  poll_interval_s: 3
+  poll_max_attempts: 100           # data_pipeline agents can take a few minutes
 
+# Oracle returns the agent reply in the "output" field and sources in "citations".
 response:
-  answer_path: answer
+  answer_path: output
+  citations_path: citations
 
 thresholds:
   pass_score: 0.8

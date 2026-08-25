@@ -114,6 +114,27 @@ def test_oracle_relay_mints_bearer_token_and_sends_it():
     assert headers["Authorization"] == "Bearer relayed-token-xyz"
 
 
+def test_oracle_reads_answer_from_output_field():
+    """Oracle returns the reply in 'output' and sources in 'citations'."""
+    fake = _FakeClient(
+        invoke_payload={"jobId": "job-2"},
+        status_sequence=[
+            {"status": "RUNNING", "output": None},
+            {"status": "COMPLETE", "output": "Sick leave is 10 days per year.",
+             "citations": [{"section": "Sick Leave", "doc": "handbook.pdf"}]},
+        ],
+    )
+    conn = OracleFusionConnector(_make_config(), client=fake)
+
+    async def run():
+        await conn.start_session()
+        return await conn.send("What is the sick leave policy?")
+
+    resp = asyncio.run(run())
+    assert resp.answer == "Sick leave is 10 days per year."
+    assert len(resp.cited_sources) == 1  # citation object stringified
+
+
 def test_oracle_failed_status_returns_ok_empty_answer():
     """An agent-level FAILED status is a wrong answer, not an infra error."""
     fake = _FakeClient(

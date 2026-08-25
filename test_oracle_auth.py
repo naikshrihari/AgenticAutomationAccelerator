@@ -104,7 +104,9 @@ show("FINAL status", final)
 data = final.json()
 print("\n----- SUMMARY -----")
 print("top-level keys:", list(data.keys()))
+print("output field  :", repr(data.get("output")))   # Oracle puts the reply here
 print("answer field  :", repr(data.get("answer")))
 print("error field   :", repr(data.get("error")))
-print("\nIf 'answer' is empty but there IS text somewhere above, tell me which "
-      "field holds it and I'll map the connector to read from there.")
+print("status        :", repr(data.get("status")))
+print("\nThe agent reply is in 'output'. If it is null with status RUNNING, the "
+      "job needs more time — increase the poll loop.")

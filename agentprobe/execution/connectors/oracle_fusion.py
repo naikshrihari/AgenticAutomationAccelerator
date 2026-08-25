@@ -22,6 +22,7 @@ Contract confirmed against a live Fusion environment's browser dev-tools capture
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Any, Optional
 
@@ -129,18 +130,34 @@ class OracleFusionConnector(BaseConnector):
         if isinstance(conv, str) and conv:
             self.conversation_id = conv
 
-        answer = _dig(payload, self.answer_path)
-        citations = _dig(payload, self.citations_path) if self.citations_path else None
-        if isinstance(citations, str):
-            citations = [citations]
         return AgentResponse(
             case_id="",
-            answer="" if answer is None else str(answer),
-            cited_sources=list(citations) if isinstance(citations, list) else [],
+            answer=self._extract_answer(payload),
+            cited_sources=self._extract_citations(payload),
             latency_ms=latency_ms,
             ok=True,
             raw=payload if isinstance(payload, dict) else {"value": payload},
         )
+
+    def _extract_answer(self, payload: dict[str, Any]) -> str:
+        """Read the answer, tolerating Oracle's field naming.
+
+        Oracle Fusion returns the reply in ``output``; we also try the configured
+        path and ``answer`` so the connector works across variations.
+        """
+        for path in (self.answer_path, "output", "answer"):
+            val = _dig(payload, path)
+            if val:
+                return str(val)
+        return ""
+
+    def _extract_citations(self, payload: dict[str, Any]) -> list[str]:
+        raw = _dig(payload, self.citations_path) if self.citations_path else _dig(payload, "citations")
+        if isinstance(raw, str):
+            return [raw]
+        if isinstance(raw, list):
+            return [c if isinstance(c, str) else json.dumps(c, default=str) for c in raw]
+        return []
 
     # -- internals -------------------------------------------------------- #
     async def _invoke(self, question: str) -> str:
