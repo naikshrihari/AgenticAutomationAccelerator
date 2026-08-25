@@ -82,9 +82,27 @@ Settings come from the environment (all optional; sensible defaults shown):
 Each target agent is one YAML file — see [`config/`](config/) for Oracle
 Fusion, ServiceNow, and OpenAI-compatible examples.
 
-## Use
+## Use — Web UI (no command line)
 
-Command line:
+Prefer a browser to the terminal? There's a Streamlit app that does everything —
+upload documents, generate the questions with a live progress bar, browse and
+download the golden set, and run an evaluation with an inline report.
+
+```bash
+pip install -e ".[ui]"     # or: pip install streamlit
+streamlit run app.py       # opens http://localhost:8501 in your browser
+```
+
+On **Windows** you can just **double-click `run_ui.bat`** — it activates the
+virtual environment and launches the UI for you.
+
+The UI has three tabs: **① Generate questions** (upload a PDF, pick question
+types / chunk size / limit, click Generate), **② Browse golden sets** (view and
+download any saved set as CSV), and **③ Evaluate an agent** (run a golden set
+against a target config and view the HTML report inline). Model and Ollama
+settings are in the sidebar, with a one-click "Test Ollama connection" button.
+
+## Use — Command line
 
 ```bash
 # 1) Build a versioned golden set from your documents (+ optional seed cases)
