@@ -34,13 +34,16 @@ class _FakeClient:
         self.polls = 0
 
     async def request(self, method, url, headers=None, json=None):
-        self.invoked.append((method, url, json))
+        self.invoked.append((method, url, json, headers))
         return _FakeResponse(self._invoke_payload)
 
-    async def get(self, url, headers=None):
-        # Return each queued status once; repeat the last one after that.
+    async def get(self, url, headers=None, params=None):
+        # A relay token fetch hits the tokenrelay URL; everything else is a poll.
+        if "tokenrelay" in url:
+            return _FakeResponse({"access_token": "relayed-token-xyz"})
         idx = min(self.polls, len(self._status_sequence) - 1)
         self.polls += 1
+        self.last_poll_params = params
         return _FakeResponse(self._status_sequence[idx])
 
 
@@ -76,12 +79,39 @@ def test_oracle_invoke_and_poll_returns_answer():
     # It polled until COMPLETE (3 status calls).
     assert fake.polls == 3
     # The invoke body carried the message and a null conversationId on turn one.
-    _, url, body = fake.invoked[0]
+    _, url, body, _hdrs = fake.invoked[0]
     assert url.endswith("/api/fusion-ai/orchestrator/agent/v2/HR_AGENT/invokeAsync")
     assert body["message"] == "How many leave days do I have?"
     assert body["conversationId"] is None
     # Conversation id is captured for subsequent turns.
     assert conn.conversation_id == "conv-1"
+    # The status poll carried ?invocationMode=ADMIN.
+    assert fake.last_poll_params == {"invocationMode": "ADMIN"}
+
+
+def test_oracle_relay_mints_bearer_token_and_sends_it():
+    """auth_mode=relay fetches a token and sends it as a Bearer header."""
+    cfg = TargetConfig(
+        name="oracle_test", connector="oracle_fusion", base_url="https://fusion.example.com",
+        options={"agent_code": "HR_AGENT", "poll_interval_s": 0, "poll_max_attempts": 5,
+                 "auth_mode": "relay", "relay_cookie": "SESSION=abc", "relay_xsrf": "xsrf-1"},
+    )
+    fake = _FakeClient(
+        invoke_payload={"jobId": "job-1"},
+        status_sequence=[{"status": "COMPLETE", "answer": "42 days"}],
+    )
+    conn = OracleFusionConnector(cfg, client=fake)
+
+    async def run():
+        await conn.start_session()  # should mint the token via relay
+        return await conn.send("q")
+
+    resp = asyncio.run(run())
+    assert resp.answer == "42 days"
+    assert conn._bearer == "relayed-token-xyz"
+    # The invoke request carried the relayed bearer token.
+    _, _, _, headers = fake.invoked[0]
+    assert headers["Authorization"] == "Bearer relayed-token-xyz"
 
 
 def test_oracle_failed_status_returns_ok_empty_answer():

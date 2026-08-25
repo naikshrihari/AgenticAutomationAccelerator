@@ -325,23 +325,42 @@ with tab_evaluate:
 
         is_oracle = base_target.connector == "oracle_fusion"
         ov_agent_code = ""
+        ora_auth_mode = "Bearer token (paste)"
+        ov_bearer = ov_cookie = ov_xsrf = ""
+        ov_username = ov_password = ov_token = ""
+
         if is_oracle:
             existing_options = getattr(base_target, "options", {}) or {}
             ov_agent_code = st.text_input(
                 "AI agent code / name",
                 value=str(existing_options.get("agent_code", "")),
             )
-
-        auth_type = base_target.auth.type
-        cc1, cc2 = st.columns(2)
-        ov_username = ov_password = ov_token = ""
-        if auth_type == "basic":
-            ov_username = cc1.text_input("Username", value="")
-            ov_password = cc2.text_input("Password", value="", type="password")
-        elif auth_type in ("bearer", "api_key"):
-            ov_token = st.text_input("Token", value="", type="password")
+            ora_auth_mode = st.radio(
+                "Authentication",
+                ["Bearer token (paste)", "Session cookie relay"],
+                help="Oracle AI Agent Studio needs a bearer token. Paste one you "
+                     "copied from the token-relay call, or paste your browser "
+                     "session cookie + xsrf token and the tool will mint one.",
+            )
+            if ora_auth_mode == "Bearer token (paste)":
+                ov_bearer = st.text_area(
+                    "Bearer token (access_token from the tokenrelay call)", height=90)
+            else:
+                ov_cookie = st.text_area(
+                    "Session cookie (the full Cookie header from your browser)", height=120)
+                ov_xsrf = st.text_input("x-xsrf-token", value="")
+                st.caption("These are sensitive session credentials and expire — "
+                           "they are used only for this run and never saved to disk.")
         else:
-            st.caption(f"Auth type '{auth_type}' — no credentials needed.")
+            auth_type = base_target.auth.type
+            cc1, cc2 = st.columns(2)
+            if auth_type == "basic":
+                ov_username = cc1.text_input("Username", value="")
+                ov_password = cc2.text_input("Password", value="", type="password")
+            elif auth_type in ("bearer", "api_key"):
+                ov_token = st.text_input("Token", value="", type="password")
+            else:
+                st.caption(f"Auth type '{auth_type}' — no credentials needed.")
 
         if st.button("▶️ Run evaluation", type="primary", disabled=not versions):
             from agentprobe.pipeline import Pipeline
@@ -350,21 +369,36 @@ with tab_evaluate:
             target = base_target.model_copy(deep=True)
             if ov_base_url:
                 target.base_url = ov_base_url
-            if is_oracle and ov_agent_code:
-                if getattr(target, "options", None) is None:
-                    target.options = {}
-                target.options["agent_code"] = ov_agent_code
-            if ov_username:
-                target.auth.username = ov_username
-            if ov_password:
-                target.auth.password = ov_password
-            if ov_token:
-                target.auth.token = ov_token
+            if getattr(target, "options", None) is None:
+                target.options = {}
 
-            # Guard: basic auth needs both fields.
-            if auth_type == "basic" and not (target.auth.username and target.auth.password):
-                st.error("Please enter both username and password.")
-                st.stop()
+            if is_oracle:
+                if ov_agent_code:
+                    target.options["agent_code"] = ov_agent_code
+                if ora_auth_mode == "Bearer token (paste)":
+                    target.options["auth_mode"] = "token"
+                    target.auth.type = "bearer"
+                    target.auth.token = ov_bearer.strip()
+                    if not target.auth.token:
+                        st.error("Please paste the bearer token.")
+                        st.stop()
+                else:
+                    target.options["auth_mode"] = "relay"
+                    target.options["relay_cookie"] = ov_cookie.strip()
+                    target.options["relay_xsrf"] = ov_xsrf.strip()
+                    if not (target.options["relay_cookie"] and target.options["relay_xsrf"]):
+                        st.error("Please paste both the session cookie and the x-xsrf-token.")
+                        st.stop()
+            else:
+                if ov_username:
+                    target.auth.username = ov_username
+                if ov_password:
+                    target.auth.password = ov_password
+                if ov_token:
+                    target.auth.token = ov_token
+                if base_target.auth.type == "basic" and not (target.auth.username and target.auth.password):
+                    st.error("Please enter both username and password.")
+                    st.stop()
 
             cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
             with st.spinner(f"Running {len(cases)} cases against {target.name}…"):

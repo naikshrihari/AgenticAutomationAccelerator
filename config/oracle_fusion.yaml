@@ -1,41 +1,43 @@
 # ---------------------------------------------------------------------------
 # Oracle Fusion AI Agent Studio target.
 #
-# You only need to fill in THREE things:
-#   1. base_url            -> your Fusion host
-#   2. options.agent_code  -> your AI agent (team) code / name
-#   3. auth credentials    -> set the environment variables named below
-#
-# Everything else uses Oracle's real invokeAsync + status polling contract and
-# usually needs no changes.
+# The AI Agent Studio API needs a BEARER TOKEN (not Basic auth). The token is
+# minted by the token-relay call. Easiest path: use the UI's Evaluate tab, which
+# lets you paste a bearer token (or a browser session cookie + xsrf token) at
+# runtime. This YAML is the CLI/base config; the UI overrides these at run time.
 # ---------------------------------------------------------------------------
 name: oracle_fusion_hr_policy
 connector: oracle_fusion
 
-# 1) Your Fusion host, e.g. https://your-env.fa.us2.oraclecloud.com
+# Your Fusion host, e.g. https://ejfh-dev4.fa.us6.oraclecloud.com
 base_url: https://YOUR-FUSION-HOST
 
-# 3) Credentials. Oracle Fusion REST APIs accept Basic auth with a user's
-#    username/password. Set these environment variables before running:
-#       Windows:  set ORACLE_FUSION_USER=...   &&  set ORACLE_FUSION_PASSWORD=...
-#    (Prefer a bearer token? use type: bearer + token_env: ORACLE_FUSION_TOKEN)
+# The AI Agent Studio API is bearer-token based.
 auth:
-  type: basic
-  username_env: ORACLE_FUSION_USER
-  password_env: ORACLE_FUSION_PASSWORD
+  type: bearer
+  # Paste a token here, or (better) set it in the UI / an env var:
+  token_env: ORACLE_FUSION_BEARER_TOKEN
 
-# 2) The agent-specific options.
 options:
   agent_code: YOUR_AGENT_CODE      # the AI agent team code / name
-  conversational: true             # keep conversation context across turns
-  invocation_mode: END_USER
-  poll_interval_s: 2               # how often to check for the answer
-  poll_max_attempts: 60            # give up (timeout) after ~2 minutes
-  # parameters: {}                 # optional custom parameters your agent expects
-  # invoke_path / status_path can be overridden here if your instance differs.
 
-# Where the answer is read from in the status response. Oracle returns the
-# reply in the top-level "answer" field.
+  # How to obtain the bearer token:
+  #   token -> use the token from auth (auth.token or ORACLE_FUSION_BEARER_TOKEN)
+  #   relay -> mint one from the token-relay endpoint using a browser session
+  auth_mode: token
+
+  # For auth_mode: relay — the tool calls this endpoint with your session cookie
+  # and xsrf token to get a fresh access_token (best set via the UI, not on disk):
+  relay_path: /fscmRestApi/tokenrelay
+  # relay_cookie: "<full Cookie header>"
+  # relay_xsrf: "<x-xsrf-token>"
+
+  invocation_mode: END_USER        # used on invokeAsync
+  status_invocation_mode: ADMIN    # used on the status poll (?invocationMode=ADMIN)
+  conversational: true
+  poll_interval_s: 2
+  poll_max_attempts: 60
+
 response:
   answer_path: answer
 
@@ -44,6 +46,6 @@ thresholds:
   partial_score: 0.5
   require_groundedness: false
 
-concurrency: 2        # Fusion async jobs are heavier; keep parallelism modest
+concurrency: 2
 max_retries: 3
 timeout_s: 120
