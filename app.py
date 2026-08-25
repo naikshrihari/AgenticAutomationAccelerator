@@ -315,10 +315,54 @@ with tab_evaluate:
         versions = GoldenSetStore(settings.golden_dir).versions()
         golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
 
+        # Load the chosen config so we can pre-fill the connection fields.
+        base_target = TargetConfig.from_yaml(target_path)
+
+        st.markdown("#### Connection")
+        st.caption("Enter the agent's connection details here — they override the "
+                   "config file at runtime and are not saved to disk.")
+        ov_base_url = st.text_input("Base URL", value=base_target.base_url)
+
+        is_oracle = base_target.connector == "oracle_fusion"
+        ov_agent_code = ""
+        if is_oracle:
+            ov_agent_code = st.text_input(
+                "AI agent code / name",
+                value=str(base_target.options.get("agent_code", "")),
+            )
+
+        auth_type = base_target.auth.type
+        cc1, cc2 = st.columns(2)
+        ov_username = ov_password = ov_token = ""
+        if auth_type == "basic":
+            ov_username = cc1.text_input("Username", value="")
+            ov_password = cc2.text_input("Password", value="", type="password")
+        elif auth_type in ("bearer", "api_key"):
+            ov_token = st.text_input("Token", value="", type="password")
+        else:
+            st.caption(f"Auth type '{auth_type}' — no credentials needed.")
+
         if st.button("▶️ Run evaluation", type="primary", disabled=not versions):
             from agentprobe.pipeline import Pipeline
 
-            target = TargetConfig.from_yaml(target_path)
+            # Apply the UI overrides onto the loaded config before running.
+            target = base_target.model_copy(deep=True)
+            if ov_base_url:
+                target.base_url = ov_base_url
+            if is_oracle and ov_agent_code:
+                target.options["agent_code"] = ov_agent_code
+            if ov_username:
+                target.auth.username = ov_username
+            if ov_password:
+                target.auth.password = ov_password
+            if ov_token:
+                target.auth.token = ov_token
+
+            # Guard: basic auth needs both fields.
+            if auth_type == "basic" and not (target.auth.username and target.auth.password):
+                st.error("Please enter both username and password.")
+                st.stop()
+
             cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
             with st.spinner(f"Running {len(cases)} cases against {target.name}…"):
                 try:

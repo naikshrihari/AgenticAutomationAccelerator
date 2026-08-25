@@ -76,14 +76,19 @@ class BaseConnector:
     def _auth_headers(self) -> dict[str, str]:
         headers = dict(self.config.extra_headers)
         auth = self.config.auth
-        if auth.type == "bearer" and auth.token_env:
-            headers["Authorization"] = f"Bearer {os.environ.get(auth.token_env, '')}"
-        elif auth.type == "api_key" and auth.token_env:
-            headers[auth.header_name] = os.environ.get(auth.token_env, "")
-        elif auth.type == "basic" and auth.username_env and auth.password_env:
+        # Literal credentials (e.g. typed into the UI) win over *_env variables.
+        token = auth.token or (os.environ.get(auth.token_env, "") if auth.token_env else "")
+        username = auth.username or (os.environ.get(auth.username_env, "") if auth.username_env else "")
+        password = auth.password or (os.environ.get(auth.password_env, "") if auth.password_env else "")
+
+        if auth.type == "bearer" and token:
+            headers["Authorization"] = f"Bearer {token}"
+        elif auth.type == "api_key" and token:
+            headers[auth.header_name] = token
+        elif auth.type == "basic" and username and password:
             import base64
 
-            raw = f"{os.environ.get(auth.username_env, '')}:{os.environ.get(auth.password_env, '')}"
+            raw = f"{username}:{password}"
             headers["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode()
         return headers
 

@@ -78,6 +78,12 @@ class AuthConfig(BaseModel):
     username_env: Optional[str] = None
     password_env: Optional[str] = None
     header_name: str = "Authorization"  # for api_key style
+    # Literal credentials. When set (e.g. entered in the UI at runtime) these
+    # take precedence over the *_env variables above. Not written to disk by the
+    # app; kept in memory for the duration of a run.
+    username: Optional[str] = None
+    password: Optional[str] = None
+    token: Optional[str] = None
     # oauth2
     token_url: Optional[str] = None
     client_id_env: Optional[str] = None
