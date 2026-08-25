@@ -9,7 +9,9 @@ than silently stored.
 
 from __future__ import annotations
 
+import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field
@@ -17,6 +19,8 @@ from pydantic import BaseModel, Field
 from ..config import Settings
 from ..llm.ollama_client import OllamaClient
 from ..models import Chunk, Difficulty, QuestionType, TestCase
+
+logger = logging.getLogger(__name__)
 
 # The mix of question types requested per chunk. Out-of-scope questions
 # deliberately ask something the chunk cannot answer, to test refusal.
@@ -65,10 +69,14 @@ class CaseGenerator:
         client: Optional[OllamaClient] = None,
         settings: Optional[Settings] = None,
         type_mix: Iterable[QuestionType] = DEFAULT_TYPE_MIX,
+        max_workers: int = 1,
     ):
         self.settings = settings or Settings.from_env()
         self.client = client or OllamaClient(self.settings, model=self.settings.generation_model)
         self.type_mix = tuple(type_mix)
+        # How many chunks to process concurrently. Ollama serves requests in
+        # parallel, so a small pool overlaps generation and cuts wall-clock time.
+        self.max_workers = max(1, max_workers)
 
     def generate_for_chunk(self, chunk: Chunk) -> list[TestCase]:
         """Produce one test case per configured question type for a chunk."""
@@ -82,9 +90,24 @@ class CaseGenerator:
         return cases
 
     def generate(self, chunks: Iterable[Chunk]) -> list[TestCase]:
+        """Generate cases for every chunk, logging progress as it goes."""
+        chunk_list = list(chunks)
+        total = len(chunk_list)
         out: list[TestCase] = []
-        for chunk in chunks:
-            out.extend(self.generate_for_chunk(chunk))
+        if self.max_workers == 1:
+            for i, chunk in enumerate(chunk_list, start=1):
+                out.extend(self.generate_for_chunk(chunk))
+                logger.info("generation: chunk %d/%d done (%d cases so far)", i, total, len(out))
+            return out
+
+        # Concurrent path: overlap chunk generation across a thread pool.
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = {pool.submit(self.generate_for_chunk, c): c for c in chunk_list}
+            done = 0
+            for future in as_completed(futures):
+                done += 1
+                out.extend(future.result())
+                logger.info("generation: chunk %d/%d done (%d cases so far)", done, total, len(out))
         return out
 
     # -- internals -------------------------------------------------------- #

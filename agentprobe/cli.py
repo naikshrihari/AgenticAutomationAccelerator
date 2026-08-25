@@ -39,11 +39,19 @@ def _load_seeds(path: Optional[str]) -> list[TestCase]:
 
 def cmd_generate(args: argparse.Namespace) -> int:
     pipeline = Pipeline(Settings.from_env())
+    type_mix = None
+    if args.types:
+        from .models import QuestionType
+
+        type_mix = [QuestionType(t.strip()) for t in args.types.split(",") if t.strip()]
     cases = pipeline.build_golden_set(
         args.docs,
         seed_cases=_load_seeds(args.seeds),
         dedupe=not args.no_dedupe,
         self_consistency=not args.no_self_consistency,
+        limit=args.limit,
+        max_workers=args.workers,
+        type_mix=type_mix,
     )
     print(f"Generated golden set with {len(cases)} approved cases -> {pipeline.settings.golden_dir}")
     return 0
@@ -96,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--seeds", help="Optional JSONL of curated seed cases")
     g.add_argument("--no-dedupe", action="store_true")
     g.add_argument("--no-self-consistency", action="store_true")
+    g.add_argument("--limit", type=int, help="Only use the first N chunks (quick trial on big docs)")
+    g.add_argument("--workers", type=int, default=1, help="Chunks to generate concurrently (default 1)")
+    g.add_argument("--types", help="Comma-separated question types to generate, e.g. 'factual,edge_case'")
     g.set_defaults(func=cmd_generate)
 
     e = sub.add_parser("evaluate", help="Run the golden set against a target")

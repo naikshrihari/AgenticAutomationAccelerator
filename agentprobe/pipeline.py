@@ -53,15 +53,30 @@ class Pipeline:
         review_gate: Optional[ReviewGate] = None,
         dedupe: bool = True,
         self_consistency: bool = True,
+        limit: Optional[int] = None,
+        max_workers: int = 1,
+        type_mix: Optional[list] = None,
     ) -> list[TestCase]:
-        """Ingest documents and generate a validated, versioned golden set."""
+        """Ingest documents and generate a validated, versioned golden set.
+
+        ``limit`` caps how many chunks are used (handy for a quick trial run on a
+        large document); ``max_workers`` overlaps generation across chunks;
+        ``type_mix`` restricts which question types are generated (fewer types =
+        fewer model calls = faster).
+        """
         # 1. Ingestion
         chunks = self._ingest(docs_folder)
         logger.info("ingested %d chunks", len(chunks))
+        if limit is not None:
+            chunks = chunks[:limit]
+            logger.info("limited to first %d chunks", len(chunks))
 
         # 2. Generation
         client = OllamaClient(self.settings, model=self.settings.generation_model)
-        generator = CaseGenerator(client=client, settings=self.settings)
+        gen_kwargs = {"client": client, "settings": self.settings, "max_workers": max_workers}
+        if type_mix:
+            gen_kwargs["type_mix"] = type_mix
+        generator = CaseGenerator(**gen_kwargs)
         cases = generator.generate(chunks)
         logger.info("generated %d raw cases", len(cases))
 
