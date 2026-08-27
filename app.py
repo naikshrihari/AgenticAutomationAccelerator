@@ -131,7 +131,7 @@ with st.sidebar:
     st.text_input("Embedding model", value="nomic-embed-text", key="embed_model")
     st.text_input("Data folder", value="data", key="data_dir")
 
-    if st.button("🔌 Test Ollama connection", use_container_width=True):
+    if st.button("🔌 Test Ollama connection", width='stretch'):
         ok, detail = check_ollama(build_settings())
         if ok:
             st.success(f"Connected. Models: {detail}")
@@ -266,15 +266,15 @@ with tab_generate:
         cases = st.session_state["last_cases"]
         records = cases_to_records(cases)
         st.markdown(f"### Generated questions ({len(records)})")
-        st.dataframe(records, use_container_width=True, height=400)
+        st.dataframe(records, width='stretch', height=400)
 
         jsonl = "\n".join(c.model_dump_json() for c in cases).encode("utf-8")
         c1, c2 = st.columns(2)
         c1.download_button("⬇️ Download CSV", records_to_csv(records),
-                           file_name="questions.csv", mime="text/csv", use_container_width=True)
+                           file_name="questions.csv", mime="text/csv", width='stretch')
         c2.download_button("⬇️ Download JSONL", jsonl,
                            file_name="golden_set.jsonl", mime="application/json",
-                           use_container_width=True)
+                           width='stretch')
 
 
 # --------------------------------------------------------------------------- #
@@ -293,7 +293,7 @@ with tab_browse:
             cases = store.load(settings.golden_dir / choice)
             records = cases_to_records(cases)
             st.markdown(f"**{len(records)}** questions in `{choice}`")
-            st.dataframe(records, use_container_width=True, height=420)
+            st.dataframe(records, width='stretch', height=420)
             st.download_button("⬇️ Download CSV", records_to_csv(records),
                                file_name=f"{choice}.csv", mime="text/csv")
 

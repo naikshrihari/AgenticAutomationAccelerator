@@ -36,6 +36,19 @@ from .reporting import RegressionDiffer, ReportBuilder, ResultsStore
 logger = logging.getLogger(__name__)
 
 
+def _quiet_windows_event_loop() -> None:
+    """Use the Selector event loop on Windows to avoid noisy, harmless
+    ConnectionResetError (WinError 10054) logs that the Proactor loop emits
+    when httpx connections are torn down at the end of a run."""
+    import sys
+
+    if sys.platform.startswith("win"):
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except Exception:  # noqa: BLE001 - best effort; never fail the run over this
+            pass
+
+
 class Pipeline:
     """High-level façade over the whole accelerator."""
 
@@ -134,6 +147,7 @@ class Pipeline:
         summary = RunSummary(run_id=run_id, target=target.name, total=len(cases))
 
         # 4. Execution (async)
+        _quiet_windows_event_loop()
         responses = asyncio.run(ExecutionEngine(target).run(cases))
         responses_by_id = {r.case_id: r for r in responses}
 
