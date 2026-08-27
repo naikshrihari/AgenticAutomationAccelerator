@@ -25,10 +25,9 @@ endpoint: /api/ask
 request_template:
   message: "{question}"
 
-# /api/ask returns the answer as a plain JSON string (the whole body IS the
-# reply), so answer_path is empty — the connector uses the entire response.
+# /api/ask returns a JSON object; the answer text is in the "response" field.
 response:
-  answer_path: ""
+  answer_path: response
 
 thresholds:
   pass_score: 0.75
