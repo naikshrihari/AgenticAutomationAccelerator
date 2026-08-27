@@ -9,31 +9,24 @@
 name: langchain_local_agent
 connector: generic_rest
 
-# Your local server. Change the port to whatever your app runs on.
-base_url: http://localhost:8000
+# Your HR Policy Agent server (from the uvicorn logs).
+base_url: http://127.0.0.1:8000
 method: POST
 
-# Local dev servers usually need no auth. If yours does, add an auth block
-# (see config/openai_compat.yaml for a bearer-token example).
+# Local dev server, no auth.
 auth:
   type: none
 
-# --- SHAPE A: a simple custom FastAPI/Flask endpoint (default) --------------
-# e.g. @app.post("/chat")  ->  returns {"answer": "..."}
-endpoint: /chat
-request_template:
-  message: "{question}"          # your server reads the question from "message"
-response:
-  answer_path: answer            # your server returns the reply in "answer"
-  # citations_path: sources      # uncomment if your server returns sources
+# The working endpoint from your server logs: POST /api/ask returned 200 OK.
+endpoint: /api/ask
 
-# --- SHAPE B: a LangServe chain (uncomment this block, comment SHAPE A) ------
-# LangServe exposes /invoke and wraps the reply in "output".
-# endpoint: /invoke
-# request_template:
-#   input: "{question}"
-# response:
-#   answer_path: output          # or output.content if output is a message obj
+# NOTE: the request field and response field below are best guesses — verify
+# them with the quick test in the chat, then adjust if your server differs.
+request_template:
+  question: "{question}"         # the JSON your /api/ask endpoint expects
+response:
+  answer_path: answer            # where the reply is in the /api/ask response
+  # citations_path: sources      # uncomment if it returns sources/citations
 
 thresholds:
   pass_score: 0.75
