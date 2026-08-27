@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Local LangChain AI agent (served over HTTP on your own machine).
+#
+# LangChain agents are usually exposed as a REST endpoint via FastAPI/Flask or
+# LangServe. Set base_url + endpoint to match your server, and make sure the
+# request_template and response.answer_path match what your server expects and
+# returns. Two common shapes are shown below — keep the one that matches yours.
+# ---------------------------------------------------------------------------
+name: langchain_local_agent
+connector: generic_rest
+
+# Your local server. Change the port to whatever your app runs on.
+base_url: http://localhost:8000
+method: POST
+
+# Local dev servers usually need no auth. If yours does, add an auth block
+# (see config/openai_compat.yaml for a bearer-token example).
+auth:
+  type: none
+
+# --- SHAPE A: a simple custom FastAPI/Flask endpoint (default) --------------
+# e.g. @app.post("/chat")  ->  returns {"answer": "..."}
+endpoint: /chat
+request_template:
+  message: "{question}"          # your server reads the question from "message"
+response:
+  answer_path: answer            # your server returns the reply in "answer"
+  # citations_path: sources      # uncomment if your server returns sources
+
+# --- SHAPE B: a LangServe chain (uncomment this block, comment SHAPE A) ------
+# LangServe exposes /invoke and wraps the reply in "output".
+# endpoint: /invoke
+# request_template:
+#   input: "{question}"
+# response:
+#   answer_path: output          # or output.content if output is a message obj
+
+thresholds:
+  pass_score: 0.75
+  partial_score: 0.5
+  require_groundedness: false
+
+concurrency: 2                   # bump up if your local server handles parallel calls
+max_retries: 3
+timeout_s: 120                   # local LLMs can be slow; give them room
