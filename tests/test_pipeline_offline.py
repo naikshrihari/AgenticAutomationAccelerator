@@ -134,6 +134,20 @@ def test_requirements_are_optional_and_injected():
     assert "never disclose salaries" in prompt
 
 
+def test_generic_connector_parses_bare_string_response():
+    """An agent that returns the answer as a plain JSON string is handled."""
+    from agentprobe.config import TargetConfig
+    from agentprobe.execution.connectors.base import BaseConnector
+
+    cfg = TargetConfig(name="x", connector="generic_rest", base_url="http://h",
+                       endpoint="/api/ask", request_template={"message": "{question}"})
+    cfg.response.answer_path = ""  # whole body is the answer
+    conn = BaseConnector(cfg)
+    resp = conn._parse("c1", "The leave policy allows 20 days.", 12.0)
+    assert resp.answer == "The leave policy allows 20 days."
+    assert resp.ok is True
+
+
 def test_results_store_roundtrip(tmp_path):
     from agentprobe.models import RunSummary
     from agentprobe.reporting.store import ResultsStore

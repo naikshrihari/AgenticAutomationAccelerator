@@ -17,16 +17,18 @@ method: POST
 auth:
   type: none
 
-# The working endpoint from your server logs: POST /api/ask returned 200 OK.
+# POST /api/ask — request/response confirmed from the server's /docs schema.
 endpoint: /api/ask
 
-# NOTE: the request field and response field below are best guesses — verify
-# them with the quick test in the chat, then adjust if your server differs.
+# The endpoint expects {message, person_number?, conversation_id?}; only
+# message is required.
 request_template:
-  question: "{question}"         # the JSON your /api/ask endpoint expects
+  message: "{question}"
+
+# /api/ask returns the answer as a plain JSON string (the whole body IS the
+# reply), so answer_path is empty — the connector uses the entire response.
 response:
-  answer_path: answer            # where the reply is in the /api/ask response
-  # citations_path: sources      # uncomment if it returns sources/citations
+  answer_path: ""
 
 thresholds:
   pass_score: 0.75

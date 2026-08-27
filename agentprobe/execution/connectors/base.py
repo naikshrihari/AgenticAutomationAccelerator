@@ -92,14 +92,22 @@ class BaseConnector:
             headers["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode()
         return headers
 
-    def _parse(self, case_id: str, payload: dict[str, Any], latency_ms: float) -> AgentResponse:
-        answer = _dig(payload, self.config.response.answer_path)
-        citations = _dig(payload, self.config.response.citations_path) if self.config.response.citations_path else None
+    def _parse(self, case_id: str, payload: Any, latency_ms: float) -> AgentResponse:
+        # Some agents return the answer as a bare JSON string (the whole body is
+        # the reply), rather than an object with an answer field. Handle both:
+        # a string payload, or an empty answer_path, means "use the whole body".
+        if isinstance(payload, str):
+            answer: Any = payload
+            citations = None
+        else:
+            path = self.config.response.answer_path
+            answer = payload if not path else _dig(payload, path)
+            citations = _dig(payload, self.config.response.citations_path) if self.config.response.citations_path else None
         if isinstance(citations, str):
             citations = [citations]
         return AgentResponse(
             case_id=case_id,
-            answer="" if answer is None else str(answer),
+            answer="" if answer is None else (answer if isinstance(answer, str) else str(answer)),
             cited_sources=list(citations) if isinstance(citations, list) else [],
             latency_ms=latency_ms,
             ok=True,
