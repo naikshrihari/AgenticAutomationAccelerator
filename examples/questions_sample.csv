@@ -1,0 +1,4 @@
+question,expected_answer,required_facts,question_type
+What is the annual leave entitlement?,Full-time employees get 20 days of paid annual leave per year.,20 days;paid;annual,factual
+How many sick leave days are allowed?,Employees may take up to 10 days of paid sick leave per year.,10 days;sick leave,factual
+Is retaliation against a complainant prohibited?,Yes. The Company prohibits retaliation against anyone who reports or participates in an investigation of alleged wrongdoing.,retaliation prohibited;reporting,factual

@@ -92,6 +92,49 @@ def extract_requirements(req_file) -> str | None:
     return clean_text(load_document(dest).text)
 
 
+def cases_from_csv(uploaded) -> list:
+    """Build TestCase objects from an uploaded CSV of question / expected_answer.
+
+    Accepts flexible column names for the two required fields, and optional
+    'required_facts' (';'-separated) and 'question_type' columns.
+    """
+    import csv as _csv
+    import io as _io
+    import uuid as _uuid
+
+    from agentprobe.models import QuestionType as _QT, TestCase as _TC
+
+    text = uploaded.getvalue().decode("utf-8-sig", errors="replace")
+    reader = _csv.DictReader(_io.StringIO(text))
+    # Normalise headers so "Expected Answer", "expected_answer", "answer" all work.
+    field_map = {(h or "").strip().lower(): h for h in (reader.fieldnames or [])}
+
+    def pick(row, *names):
+        for n in names:
+            key = field_map.get(n)
+            if key and row.get(key, "").strip():
+                return row[key].strip()
+        return ""
+
+    cases = []
+    for row in reader:
+        question = pick(row, "question", "q", "prompt")
+        expected = pick(row, "expected_answer", "expected answer", "expected", "answer", "ground_truth")
+        if not question:
+            continue  # skip blank/malformed rows
+        facts = pick(row, "required_facts", "required facts", "facts")
+        qtype = pick(row, "question_type", "type").lower()
+        cases.append(_TC(
+            case_id=f"csv-{_uuid.uuid4().hex[:10]}",
+            question=question,
+            expected_answer=expected,
+            required_facts=[f.strip() for f in facts.split(";") if f.strip()],
+            question_type=_QT(qtype) if qtype in {t.value for t in _QT} else _QT.FACTUAL,
+            approved=True,
+        ))
+    return cases
+
+
 def cases_to_records(cases) -> list[dict]:
     """Flatten test cases into rows for a table / CSV."""
     return [
@@ -313,7 +356,23 @@ with tab_evaluate:
         target_path = st.selectbox("Target config", options=config_files)
         settings = build_settings()
         versions = GoldenSetStore(settings.golden_dir).versions()
-        golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
+
+        st.markdown("#### Questions to run")
+        case_source = st.radio(
+            "Question set",
+            ["Saved golden set", "Upload CSV"],
+            horizontal=True,
+            help="Use a golden set generated in tab ①, or upload your own CSV with "
+                 "question and expected_answer columns.",
+        )
+        golden_choice = None
+        csv_upload = None
+        if case_source == "Saved golden set":
+            golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
+        else:
+            csv_upload = st.file_uploader("CSV with 'question' and 'expected_answer' columns", type=["csv"])
+            st.caption("Required columns: question, expected_answer. Optional: "
+                       "required_facts (';'-separated), question_type.")
 
         # Load the chosen config so we can pre-fill the connection fields.
         base_target = TargetConfig.from_yaml(target_path)
@@ -362,7 +421,8 @@ with tab_evaluate:
             else:
                 st.caption(f"Auth type '{auth_type}' — no credentials needed.")
 
-        if st.button("▶️ Run evaluation", type="primary", disabled=not versions):
+        can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)
+        if st.button("▶️ Run evaluation", type="primary", disabled=not can_run):
             from agentprobe.pipeline import Pipeline
 
             # Apply the UI overrides onto the loaded config before running.
@@ -400,7 +460,16 @@ with tab_evaluate:
                     st.error("Please enter both username and password.")
                     st.stop()
 
-            cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
+            # Load the questions from the chosen source.
+            if case_source == "Upload CSV":
+                cases = cases_from_csv(csv_upload)
+                if not cases:
+                    st.error("No usable rows found. The CSV needs a 'question' column "
+                             "(and ideally 'expected_answer').")
+                    st.stop()
+                st.info(f"Loaded {len(cases)} questions from CSV.")
+            else:
+                cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
             with st.spinner(f"Running {len(cases)} cases against {target.name}…"):
                 try:
                     summary = Pipeline(settings).evaluate(target, cases=cases)
