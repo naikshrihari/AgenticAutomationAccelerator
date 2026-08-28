@@ -92,32 +92,48 @@ def extract_requirements(req_file) -> str | None:
     return clean_text(load_document(dest).text)
 
 
-def cases_from_csv(uploaded) -> list:
-    """Build TestCase objects from an uploaded CSV of question / expected_answer.
+def _read_rows(uploaded) -> list[dict]:
+    """Read an uploaded CSV or Excel file into a list of {header: value} rows."""
+    import io as _io
 
-    Accepts flexible column names for the two required fields, and optional
+    name = (uploaded.name or "").lower()
+    if name.endswith((".xlsx", ".xls")):
+        import pandas as _pd  # needs openpyxl for .xlsx
+
+        df = _pd.read_excel(_io.BytesIO(uploaded.getvalue()), dtype=str).fillna("")
+        return df.to_dict(orient="records")
+    # CSV
+    import csv as _csv
+
+    text = uploaded.getvalue().decode("utf-8-sig", errors="replace")
+    return list(_csv.DictReader(_io.StringIO(text)))
+
+
+def cases_from_upload(uploaded) -> list:
+    """Build TestCase objects from an uploaded CSV or Excel file.
+
+    Accepts flexible column names for question / expected_answer, and optional
     'required_facts' (';'-separated) and 'question_type' columns.
     """
-    import csv as _csv
-    import io as _io
     import uuid as _uuid
 
     from agentprobe.models import QuestionType as _QT, TestCase as _TC
 
-    text = uploaded.getvalue().decode("utf-8-sig", errors="replace")
-    reader = _csv.DictReader(_io.StringIO(text))
+    rows = _read_rows(uploaded)
+    if not rows:
+        return []
     # Normalise headers so "Expected Answer", "expected_answer", "answer" all work.
-    field_map = {(h or "").strip().lower(): h for h in (reader.fieldnames or [])}
+    field_map = {(str(h) or "").strip().lower(): h for h in rows[0].keys()}
 
     def pick(row, *names):
         for n in names:
             key = field_map.get(n)
-            if key and row.get(key, "").strip():
-                return row[key].strip()
+            if key is not None and str(row.get(key, "")).strip():
+                return str(row[key]).strip()
         return ""
 
     cases = []
-    for row in reader:
+    for row in rows:
         question = pick(row, "question", "q", "prompt")
         expected = pick(row, "expected_answer", "expected answer", "expected", "answer", "ground_truth")
         if not question:
@@ -125,7 +141,7 @@ def cases_from_csv(uploaded) -> list:
         facts = pick(row, "required_facts", "required facts", "facts")
         qtype = pick(row, "question_type", "type").lower()
         cases.append(_TC(
-            case_id=f"csv-{_uuid.uuid4().hex[:10]}",
+            case_id=f"up-{_uuid.uuid4().hex[:10]}",
             question=question,
             expected_answer=expected,
             required_facts=[f.strip() for f in facts.split(";") if f.strip()],
@@ -360,7 +376,7 @@ with tab_evaluate:
         st.markdown("#### Questions to run")
         case_source = st.radio(
             "Question set",
-            ["Saved golden set", "Upload CSV"],
+            ["Saved golden set", "Upload CSV/Excel"],
             horizontal=True,
             help="Use a golden set generated in tab ①, or upload your own CSV with "
                  "question and expected_answer columns.",
@@ -370,7 +386,9 @@ with tab_evaluate:
         if case_source == "Saved golden set":
             golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
         else:
-            csv_upload = st.file_uploader("CSV with 'question' and 'expected_answer' columns", type=["csv"])
+            csv_upload = st.file_uploader(
+                "CSV or Excel with 'question' and 'expected_answer' columns",
+                type=["csv", "xlsx", "xls"])
             st.caption("Required columns: question, expected_answer. Optional: "
                        "required_facts (';'-separated), question_type.")
 
@@ -421,7 +439,7 @@ with tab_evaluate:
             else:
                 st.caption(f"Auth type '{auth_type}' — no credentials needed.")
 
-        can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)
+        can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)  # noqa: E501
         if st.button("▶️ Run evaluation", type="primary", disabled=not can_run):
             from agentprobe.pipeline import Pipeline
 
@@ -461,13 +479,18 @@ with tab_evaluate:
                     st.stop()
 
             # Load the questions from the chosen source.
-            if case_source == "Upload CSV":
-                cases = cases_from_csv(csv_upload)
+            if case_source == "Upload CSV/Excel":
+                try:
+                    cases = cases_from_upload(csv_upload)
+                except ImportError:
+                    st.error("Reading Excel needs pandas + openpyxl. Install them with "
+                             "`pip install pandas openpyxl`, or upload a CSV instead.")
+                    st.stop()
                 if not cases:
-                    st.error("No usable rows found. The CSV needs a 'question' column "
+                    st.error("No usable rows found. The file needs a 'question' column "
                              "(and ideally 'expected_answer').")
                     st.stop()
-                st.info(f"Loaded {len(cases)} questions from CSV.")
+                st.info(f"Loaded {len(cases)} questions from {csv_upload.name}.")
             else:
                 cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
             with st.spinner(f"Running {len(cases)} cases against {target.name}…"):
