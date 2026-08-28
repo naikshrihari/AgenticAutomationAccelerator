@@ -12,7 +12,11 @@ if exist ".venv\Scripts\activate.bat" (
 )
 
 echo Starting AgentProbe UI...
-echo If your browser does not open automatically, go to http://localhost:8501
-python -m streamlit run app.py
+echo Open the "Local URL" that Streamlit prints below (usually
+echo http://localhost:8501, but it uses the next free port if that is taken).
+echo Close any older AgentProbe window first so you are not on a stale copy.
+echo.
+REM --server.port 8501 keeps the port stable; remove it to let Streamlit pick one.
+python -m streamlit run app.py --server.port 8501
 
 pause
