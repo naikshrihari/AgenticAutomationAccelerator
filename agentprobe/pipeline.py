@@ -138,17 +138,32 @@ class Pipeline:
         cases: Optional[list[TestCase]] = None,
         *,
         compare_baseline: bool = True,
+        on_execute=None,
+        on_grade=None,
     ) -> RunSummary:
-        """Run the golden set against a target and produce a full report."""
+        """Run the golden set against a target and produce a full report.
+
+        ``on_execute(done, total)`` is called as each agent response comes back;
+        ``on_grade(done, total, result)`` is called as each case is graded. Both
+        are optional and let a UI show live per-record progress.
+        """
         if cases is None:
             cases = GoldenSetStore(self.settings.golden_dir).load_latest()
 
         run_id = f"run-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:6]}"
         summary = RunSummary(run_id=run_id, target=target.name, total=len(cases))
+        total = len(cases)
 
         # 4. Execution (async)
         _quiet_windows_event_loop()
-        responses = asyncio.run(ExecutionEngine(target).run(cases))
+        exec_done = {"n": 0}
+
+        def _on_result() -> None:
+            exec_done["n"] += 1
+            if on_execute is not None:
+                on_execute(exec_done["n"], total)
+
+        responses = asyncio.run(ExecutionEngine(target).run(cases, on_result=_on_result))
         responses_by_id = {r.case_id: r for r in responses}
 
         # 5. Grading
@@ -156,7 +171,10 @@ class Pipeline:
         cases_by_id = {c.case_id: c for c in cases}
         results: list[GradedResult] = []
         for case_id, response in responses_by_id.items():
-            results.append(resolver.grade(cases_by_id[case_id], response))
+            result = resolver.grade(cases_by_id[case_id], response)
+            results.append(result)
+            if on_grade is not None:
+                on_grade(len(results), total, result)
         _tally(summary, results)
         summary.finished_at = datetime.now(timezone.utc)
 

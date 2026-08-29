@@ -493,12 +493,35 @@ with tab_evaluate:
                 st.info(f"Loaded {len(cases)} questions from {csv_upload.name}.")
             else:
                 cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
-            with st.spinner(f"Running {len(cases)} cases against {target.name}…"):
-                try:
-                    summary = Pipeline(settings).evaluate(target, cases=cases)
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"Evaluation failed: {exc}")
-                    st.stop()
+            # Live per-record progress: sending fills the first 40%, grading the
+            # rest (grading is the slower, LLM-judge step).
+            st.markdown(f"Running **{len(cases)}** cases against **{target.name}**…")
+            prog = st.progress(0.0, text="Starting…")
+            live = st.empty()
+            live_rows: list[dict] = []
+
+            def on_execute(done, total):
+                prog.progress(min(0.4, 0.4 * done / total),
+                              text=f"Querying agent — {done}/{total} answered")
+
+            def on_grade(done, total, result):
+                prog.progress(0.4 + 0.6 * done / total,
+                              text=f"Grading — {done}/{total} (last: {result.verdict.value})")
+                live_rows.append({
+                    "case": result.case_id,
+                    "type": result.question_type.value,
+                    "verdict": result.verdict.value,
+                    "score": round(result.score, 2),
+                })
+                live.dataframe(live_rows, width='stretch', height=240)
+
+            try:
+                summary = Pipeline(settings).evaluate(
+                    target, cases=cases, on_execute=on_execute, on_grade=on_grade)
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Evaluation failed: {exc}")
+                st.stop()
+            prog.progress(1.0, text="Done")
 
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Pass rate", f"{summary.pass_rate:.0%}")

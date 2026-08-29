@@ -56,17 +56,27 @@ class ExecutionEngine:
     def __init__(self, config: TargetConfig):
         self.config = config
 
-    async def run(self, cases: list[TestCase]) -> list[AgentResponse]:
-        """Execute all cases and return one response per case, in input order."""
+    async def run(self, cases: list[TestCase], on_result=None) -> list[AgentResponse]:
+        """Execute all cases and return one response per case, in input order.
+
+        ``on_result`` is an optional no-arg callback invoked once each agent
+        response comes back, so a UI can show live send-progress.
+        """
         semaphore = asyncio.Semaphore(self.config.concurrency)
+        results: list[Optional[AgentResponse]] = [None] * len(cases)
         async with httpx.AsyncClient(timeout=self.config.timeout_s) as client:
             connector = build_connector(self.config)
             connector._client = client  # share one pooled client across sends
             connector._owns_client = False
             await connector.start_session()
             try:
-                tasks = [self._run_one(connector, case, semaphore) for case in cases]
-                return await asyncio.gather(*tasks)
+                async def worker(idx: int, case: TestCase) -> None:
+                    results[idx] = await self._run_one(connector, case, semaphore)
+                    if on_result is not None:
+                        on_result()
+
+                await asyncio.gather(*(worker(i, c) for i, c in enumerate(cases)))
+                return [r for r in results if r is not None]
             finally:
                 await connector.close_session()
 
