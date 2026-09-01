@@ -17,11 +17,20 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+# Load .env so the sidebar defaults and any credentials come from it.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 from agentprobe.config import Settings, TargetConfig
 from agentprobe.golden import GoldenSetStore, ReviewGate
@@ -44,6 +53,7 @@ def build_settings() -> Settings:
         generation_model=st.session_state.gen_model,
         judge_model=st.session_state.judge_model,
         embedding_model=st.session_state.embed_model,
+        request_timeout_s=float(os.environ.get("AGENTPROBE_TIMEOUT", 600)),
         data_dir=Path(st.session_state.data_dir),
     )
 
@@ -184,11 +194,11 @@ def records_to_csv(records: list[dict]) -> bytes:
 # --------------------------------------------------------------------------- #
 with st.sidebar:
     st.header("⚙️ Settings")
-    st.text_input("Ollama URL", value="http://localhost:11434/v1", key="ollama_url")
-    st.text_input("Generation model", value="llama3.2:3b", key="gen_model")
-    st.text_input("Judge model", value="llama3.2:3b", key="judge_model")
-    st.text_input("Embedding model", value="nomic-embed-text", key="embed_model")
-    st.text_input("Data folder", value="data", key="data_dir")
+    st.text_input("Ollama URL", value=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1"), key="ollama_url")
+    st.text_input("Generation model", value=os.environ.get("AGENTPROBE_GEN_MODEL", "llama3.2:1b"), key="gen_model")
+    st.text_input("Judge model", value=os.environ.get("AGENTPROBE_JUDGE_MODEL", "llama3.2:1b"), key="judge_model")
+    st.text_input("Embedding model", value=os.environ.get("AGENTPROBE_EMBED_MODEL", "nomic-embed-text"), key="embed_model")
+    st.text_input("Data folder", value=os.environ.get("AGENTPROBE_DATA_DIR", "data"), key="data_dir")
 
     if st.button("🔌 Test Ollama connection", width='stretch'):
         ok, detail = check_ollama(build_settings())

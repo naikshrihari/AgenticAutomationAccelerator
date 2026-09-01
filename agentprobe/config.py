@@ -19,6 +19,23 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+_DOTENV_LOADED = False
+
+
+def _load_dotenv_once() -> None:
+    """Load a local .env file into the environment, once, if python-dotenv is
+    installed. Values already set in the real environment take precedence."""
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    _DOTENV_LOADED = True
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()  # reads ./.env; does not override existing env vars
+    except ImportError:
+        pass
+
 
 class Settings(BaseModel):
     """Global runtime settings, populated from the environment.
@@ -48,6 +65,7 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "Settings":
+        _load_dotenv_once()
         env = os.environ
         return cls(
             ollama_base_url=env.get("OLLAMA_BASE_URL", cls.model_fields["ollama_base_url"].default),
