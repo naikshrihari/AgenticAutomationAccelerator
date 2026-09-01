@@ -106,10 +106,14 @@ def chunks_from_paths(paths: list[Path], chunk_size: int):
 # Background jobs — run long tasks off the Streamlit script thread so that
 # changing a widget (which reruns the script) never interrupts them.
 # --------------------------------------------------------------------------- #
+class JobCancelled(Exception):
+    """Raised inside a worker when the user requests cancellation."""
+
+
 def new_job() -> dict:
     return {"status": "running", "phase": "starting", "exec_done": 0,
             "grade_done": 0, "gen_done": 0, "total": 0, "rows": [],
-            "result": None, "error": None, "message": ""}
+            "result": None, "error": None, "message": "", "cancel": False}
 
 
 def start_job(fn) -> None:
@@ -335,6 +339,9 @@ with tab_generate:
                 job["phase"] = "generating"
                 cases = []
                 for i, chunk in enumerate(chunks, start=1):
+                    if job["cancel"]:
+                        job["status"] = "cancelled"
+                        return
                     cases.extend(generator.generate_for_chunk(chunk))
                     job["gen_done"] = i
                     job["message"] = f"Section {i}/{len(chunks)} — {len(cases)} questions so far"
@@ -363,8 +370,17 @@ with tab_generate:
             frac = (gen_job["gen_done"] / total) if gen_job["phase"] == "generating" else 0.02
             st.progress(min(frac, 0.99), text=f"{gen_job['phase']} — {gen_job['message']}")
             st.caption("Running in the background — you can change settings without stopping it.")
+            if gen_job["cancel"]:
+                st.warning("Cancelling — stopping after the current section…")
+            elif st.button("🛑 Cancel", key="gen_cancel"):
+                gen_job["cancel"] = True
+                st.rerun()
             time.sleep(0.7)
             st.rerun()
+        elif gen_job["status"] == "cancelled":
+            st.warning("Generation cancelled.")
+            if st.button("Clear", key="gen_clear_cancel"):
+                del st.session_state["gen_job"]; st.rerun()
         elif gen_job["status"] == "error":
             st.error(f"Generation failed: {gen_job['error']}")
             if st.button("Clear", key="gen_clear_err"):
@@ -565,10 +581,14 @@ with tab_evaluate:
             def _run_eval():
                 try:
                     def on_execute(done, total):
+                        if job["cancel"]:
+                            raise JobCancelled()
                         job["exec_done"] = done
                         job["phase"] = "querying"
 
                     def on_grade(done, total, result):
+                        if job["cancel"]:
+                            raise JobCancelled()
                         job["grade_done"] = done
                         job["phase"] = "grading"
                         job["rows"].append({
@@ -585,6 +605,8 @@ with tab_evaluate:
                         "report_path": str(report),
                     }
                     job["status"] = "done"
+                except JobCancelled:
+                    job["status"] = "cancelled"
                 except Exception as exc:  # noqa: BLE001
                     job["status"] = "error"
                     job["error"] = str(exc)
@@ -604,10 +626,19 @@ with tab_evaluate:
                     label = f"Querying agent — {eval_job['exec_done']}/{total}"
                 st.progress(min(frac, 0.99), text=label)
                 st.caption("Running in the background — you can change settings without stopping it.")
+                if eval_job["cancel"]:
+                    st.warning("Cancelling — stopping after the current case…")
+                elif st.button("🛑 Cancel", key="eval_cancel"):
+                    eval_job["cancel"] = True
+                    st.rerun()
                 if eval_job["rows"]:
                     st.dataframe(eval_job["rows"], width='stretch', height=240)
                 time.sleep(0.7)
                 st.rerun()
+            elif eval_job["status"] == "cancelled":
+                st.warning("Evaluation cancelled (partial results were not saved).")
+                if st.button("Clear", key="eval_clear_cancel"):
+                    del st.session_state["eval_job"]; st.rerun()
             elif eval_job["status"] == "error":
                 st.error(f"Evaluation failed: {eval_job['error']}")
                 if st.button("Clear", key="eval_clear_err"):
