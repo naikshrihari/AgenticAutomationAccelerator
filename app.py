@@ -439,6 +439,11 @@ with tab_evaluate:
             else:
                 st.caption(f"Auth type '{auth_type}' — no credentials needed.")
 
+        analyze_failures = st.checkbox(
+            "🔎 Analyze failures (root cause + suggested fixes)", value=False,
+            help="After grading, cluster the failures and diagnose each group on the "
+                 "local model, with a suggested fix. Adds a few extra model calls.")
+
         can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)  # noqa: E501
         if st.button("▶️ Run evaluation", type="primary", disabled=not can_run):
             from agentprobe.pipeline import Pipeline
@@ -517,7 +522,8 @@ with tab_evaluate:
 
             try:
                 summary = Pipeline(settings).evaluate(
-                    target, cases=cases, on_execute=on_execute, on_grade=on_grade)
+                    target, cases=cases, analyze_failures=analyze_failures,
+                    on_execute=on_execute, on_grade=on_grade)
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Evaluation failed: {exc}")
                 st.stop()

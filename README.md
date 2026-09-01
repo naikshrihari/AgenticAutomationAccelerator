@@ -42,6 +42,17 @@ HR data never leave your network, which suits regulated HR and gaming data.
 The same flow runs against the next platform by changing **only the connector
 and config** — nothing in the core is platform-specific.
 
+## Root-cause analysis (why did it fail?)
+
+Beyond pass/fail, AgentProbe can explain **why** cases failed. Enable it with the
+"🔎 Analyze failures" checkbox in the UI's Evaluate tab, or `--analyze` on the
+CLI. It embeds each failure, clusters similar ones together, and asks the local
+judge model to diagnose each cluster — producing a **category, likely cause, and
+a concrete suggested fix** — which appears as a "Why did it fail?" section in the
+HTML report. For example, several failures might be grouped as
+*"wrong_source_retrieved — the agent returns an adjacent handbook section; add
+section titles to the embedding text."* All of it runs locally on Ollama.
+
 ## Why Ollama
 
 - **On-premise inference** — documents and HR data stay inside the network.

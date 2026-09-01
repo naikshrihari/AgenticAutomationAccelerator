@@ -138,6 +138,7 @@ class Pipeline:
         cases: Optional[list[TestCase]] = None,
         *,
         compare_baseline: bool = True,
+        analyze_failures: bool = False,
         on_execute=None,
         on_grade=None,
     ) -> RunSummary:
@@ -146,6 +147,10 @@ class Pipeline:
         ``on_execute(done, total)`` is called as each agent response comes back;
         ``on_grade(done, total, result)`` is called as each case is graded. Both
         are optional and let a UI show live per-record progress.
+
+        When ``analyze_failures`` is set, a root-cause analysis clusters the
+        failures and diagnoses each cluster (with a suggested fix) on the local
+        model, and the result is included in the HTML report.
         """
         if cases is None:
             cases = GoldenSetStore(self.settings.golden_dir).load_latest()
@@ -188,8 +193,18 @@ class Pipeline:
         store.save_run(summary, results)
         store.close()
 
+        # Optional: diagnose why cases failed (clusters + suggested fixes).
+        root_cause = None
+        if analyze_failures:
+            from .analysis import RootCauseAnalyzer
+
+            try:
+                root_cause = RootCauseAnalyzer(settings=self.settings).analyze(results, cases_by_id)
+            except Exception as exc:  # noqa: BLE001 - analysis is best-effort
+                logger.warning("root-cause analysis failed: %s", exc)
+
         builder = ReportBuilder(self.settings.reports_dir / run_id)
-        builder.to_html(summary, results, regression)
+        builder.to_html(summary, results, regression, root_cause=root_cause)
         builder.to_csv(results)
         builder.to_native_evaluator(results)
         logger.info(

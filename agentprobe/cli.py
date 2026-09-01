@@ -76,7 +76,9 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     cases = None
     if args.golden:
         cases = GoldenSetStore(pipeline.settings.golden_dir).load(args.golden)
-    summary = pipeline.evaluate(target, cases=cases, compare_baseline=not args.no_baseline)
+    summary = pipeline.evaluate(
+        target, cases=cases, compare_baseline=not args.no_baseline,
+        analyze_failures=args.analyze)
     _print_summary(summary, pipeline.settings)
     return 1 if args.fail_under and summary.pass_rate < args.fail_under else 0
 
@@ -131,6 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--target", required=True, help="Target YAML config")
     e.add_argument("--golden", help="Specific golden JSONL (defaults to latest)")
     e.add_argument("--no-baseline", action="store_true", help="Skip regression diff")
+    e.add_argument("--analyze", action="store_true", help="Root-cause analysis of failures with suggested fixes")
     e.add_argument("--fail-under", type=float, help="Exit non-zero if pass rate below this")
     e.set_defaults(func=cmd_evaluate)
 

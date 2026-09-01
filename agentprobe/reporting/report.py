@@ -53,6 +53,7 @@ class ReportBuilder:
         results: list[GradedResult],
         regression: Optional[RegressionReport] = None,
         filename: str = "report.html",
+        root_cause=None,
     ) -> Path:
         by_type = _breakdown_by_type(results)
         context = {
@@ -60,6 +61,7 @@ class ReportBuilder:
             "results": results,
             "by_type": by_type,
             "regression": regression,
+            "root_cause": root_cause,
             "Verdict": Verdict,
         }
         html = self._render(context)

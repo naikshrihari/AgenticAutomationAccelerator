@@ -53,6 +53,30 @@
     </table>
   </section>
 
+  {% if root_cause and root_cause.has_findings %}
+  <section>
+    <h2>Why did it fail? — root-cause analysis</h2>
+    <p class="muted">{{ root_cause.total_failures }} failing case(s) grouped into
+       {{ root_cause.clusters|length }} theme(s), each with a suggested fix. Diagnosed locally.</p>
+    {% for c in root_cause.clusters %}
+    <div class="card" style="width:100%; box-sizing:border-box; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <strong>{{ c.category }}</strong>
+        <span class="muted">{{ c.size }} case(s)</span>
+      </div>
+      <p>{{ c.summary }}</p>
+      <p><strong>Likely cause:</strong> {{ c.likely_cause }}</p>
+      <p class="fix"><strong>Suggested fix:</strong> {{ c.suggested_fix }}</p>
+      {% if c.sample_questions %}
+      <details><summary>Example questions</summary>
+        <ul>{% for q in c.sample_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
   {% if regression %}
   <section>
     <h2>Regression vs baseline</h2>
