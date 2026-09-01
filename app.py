@@ -19,6 +19,8 @@ import io
 import json
 import os
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -73,20 +75,46 @@ def check_ollama(settings: Settings) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def ingest_uploads(files, chunk_size: int, settings: Settings):
-    """Save uploaded files to a temp folder and turn them into tagged chunks."""
+def save_uploads_to_tmp(files) -> list[Path]:
+    """Copy uploaded files to a temp folder (main thread) and return their paths.
+
+    Must run on the main thread because Streamlit's uploaded-file objects are
+    bound to the session; the heavy parsing then happens in a worker thread.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="agentprobe_upload_"))
-    chunks = []
+    paths: list[Path] = []
     for uploaded in files:
         dest = tmp / uploaded.name
         dest.write_bytes(uploaded.getbuffer())
-        if dest.suffix.lower() not in SUPPORTED_SUFFIXES:
-            st.warning(f"Skipped unsupported file: {uploaded.name}")
+        paths.append(dest)
+    return paths
+
+
+def chunks_from_paths(paths: list[Path], chunk_size: int):
+    """Load, clean, chunk, and tag documents from paths (worker-thread safe)."""
+    chunks = []
+    for p in paths:
+        if p.suffix.lower() not in SUPPORTED_SUFFIXES:
             continue
-        doc = load_document(dest)
+        doc = load_document(p)
         doc.text = clean_text(doc.text)
         chunks.extend(chunk_document(doc, max_tokens=chunk_size))
     return tag_chunks(chunks)
+
+
+# --------------------------------------------------------------------------- #
+# Background jobs — run long tasks off the Streamlit script thread so that
+# changing a widget (which reruns the script) never interrupts them.
+# --------------------------------------------------------------------------- #
+def new_job() -> dict:
+    return {"status": "running", "phase": "starting", "exec_done": 0,
+            "grade_done": 0, "gen_done": 0, "total": 0, "rows": [],
+            "result": None, "error": None, "message": ""}
+
+
+def start_job(fn) -> None:
+    """Run fn(job-mutating) in a daemon thread. fn sets job['status']."""
+    threading.Thread(target=fn, daemon=True).start()
 
 
 def extract_requirements(req_file) -> str | None:
@@ -265,9 +293,11 @@ with tab_generate:
         do_dedupe = st.checkbox("De-duplicate", value=False,
                                 help="Embedding-based removal of near-duplicate questions.")
 
-    if st.button("🚀 Generate", type="primary", disabled=not files):
-        settings = build_settings()
+    gen_job = st.session_state.get("gen_job")
+    gen_running = bool(gen_job and gen_job["status"] == "running")
 
+    if st.button("🚀 Generate", type="primary", disabled=not files or gen_running):
+        settings = build_settings()
         ok, detail = check_ollama(settings)
         if not ok:
             st.error(f"Ollama is not reachable at {settings.ollama_base_url}. "
@@ -277,58 +307,73 @@ with tab_generate:
             st.error("Pick at least one question type.")
             st.stop()
 
-        with st.status("Working…", expanded=True) as status:
-            st.write("📄 Reading and chunking documents…")
-            chunks = ingest_uploads(files, chunk_size, settings)
-            if limit:
-                chunks = chunks[: int(limit)]
-            if not chunks:
-                status.update(label="No text found", state="error")
-                st.error("No readable text was extracted. If your PDF is a scan, it needs OCR first.")
-                st.stop()
-            st.write(f"Found **{len(chunks)}** sections. "
-                     f"Generating up to **{len(chunks) * len(types)}** questions "
-                     f"({len(types)} type(s) each)…")
+        # Save uploads on the main thread; parse/generate in the worker thread.
+        doc_paths = save_uploads_to_tmp(files)
+        req_path = save_uploads_to_tmp([req_file])[0] if req_file else None
+        job = new_job()
+        st.session_state["gen_job"] = job
+        _types = [QuestionType(t) for t in types]
+        _limit, _chunk_size, _workers = int(limit), int(chunk_size), int(workers)
+        _do_validate, _do_dedupe = do_validate, do_dedupe
 
-            requirements = extract_requirements(req_file)
-            if requirements:
-                st.write(f"🎯 Steering questions with business requirements ({len(requirements)} chars).")
+        def _run_generation():
+            try:
+                job["phase"] = "ingesting"
+                chunks = chunks_from_paths(doc_paths, _chunk_size)
+                if _limit:
+                    chunks = chunks[:_limit]
+                if not chunks:
+                    job["status"] = "error"
+                    job["error"] = "No readable text extracted (a scanned PDF needs OCR first)."
+                    return
+                job["total"] = len(chunks)
+                requirements = clean_text(load_document(req_path).text) if req_path else None
+                generator = CaseGenerator(
+                    client=OllamaClient(settings, model=settings.generation_model),
+                    settings=settings, type_mix=_types, max_workers=_workers,
+                    requirements=requirements)
+                job["phase"] = "generating"
+                cases = []
+                for i, chunk in enumerate(chunks, start=1):
+                    cases.extend(generator.generate_for_chunk(chunk))
+                    job["gen_done"] = i
+                    job["message"] = f"Section {i}/{len(chunks)} — {len(cases)} questions so far"
+                if _do_validate and cases:
+                    job["phase"] = "validating"
+                    checker = SelfConsistencyChecker(settings=settings)
+                    cases = checker.filter(cases, {c.chunk_id: c for c in chunks})
+                if _do_dedupe and cases:
+                    job["phase"] = "deduping"
+                    cases = Deduplicator(EmbeddingModel(settings), settings).dedupe(cases)
+                cases = ReviewGate().run(cases)
+                saved_path = GoldenSetStore(settings.golden_dir).save_version(cases)
+                job["result"] = {"cases": cases, "path": str(saved_path)}
+                job["status"] = "done"
+            except Exception as exc:  # noqa: BLE001
+                job["status"] = "error"
+                job["error"] = str(exc)
 
-            client = OllamaClient(settings, model=settings.generation_model)
-            generator = CaseGenerator(
-                client=client,
-                settings=settings,
-                type_mix=[QuestionType(t) for t in types],
-                max_workers=int(workers),
-                requirements=requirements,
-            )
+        start_job(_run_generation)
+        st.rerun()
 
-            progress = st.progress(0.0)
-            live = st.empty()
-            cases = []
-            # Drive generation chunk-by-chunk so the UI shows live progress.
-            for i, chunk in enumerate(chunks, start=1):
-                cases.extend(generator.generate_for_chunk(chunk))
-                progress.progress(i / len(chunks))
-                live.write(f"Section {i}/{len(chunks)} — {len(cases)} questions so far")
-
-            if do_validate and cases:
-                st.write("🔎 Self-consistency check…")
-                checker = SelfConsistencyChecker(settings=settings)
-                by_id = {c.chunk_id: c for c in chunks}
-                cases = checker.filter(cases, by_id)
-            if do_dedupe and cases:
-                st.write("🧹 De-duplicating…")
-                cases = Deduplicator(EmbeddingModel(settings), settings).dedupe(cases)
-
-            cases = ReviewGate().run(cases)  # auto-approve into the golden set
-            store = GoldenSetStore(settings.golden_dir)
-            saved_path = store.save_version(cases)
-            status.update(label=f"Done — {len(cases)} questions generated", state="complete")
-
-        st.session_state["last_cases"] = cases
-        st.session_state["last_path"] = str(saved_path)
-        st.success(f"Saved golden set to `{saved_path}`")
+    # Progress / result area for generation (polls while the thread runs).
+    if gen_job:
+        if gen_job["status"] == "running":
+            total = gen_job["total"] or 1
+            frac = (gen_job["gen_done"] / total) if gen_job["phase"] == "generating" else 0.02
+            st.progress(min(frac, 0.99), text=f"{gen_job['phase']} — {gen_job['message']}")
+            st.caption("Running in the background — you can change settings without stopping it.")
+            time.sleep(0.7)
+            st.rerun()
+        elif gen_job["status"] == "error":
+            st.error(f"Generation failed: {gen_job['error']}")
+            if st.button("Clear", key="gen_clear_err"):
+                del st.session_state["gen_job"]; st.rerun()
+        elif gen_job["status"] == "done":
+            res = gen_job["result"]
+            st.session_state["last_cases"] = res["cases"]
+            st.success(f"Saved golden set with {len(res['cases'])} questions to `{res['path']}`")
+            del st.session_state["gen_job"]
 
     # Show the most recent result (persists across reruns)
     if st.session_state.get("last_cases"):
@@ -454,8 +499,11 @@ with tab_evaluate:
             help="After grading, cluster the failures and diagnose each group on the "
                  "local model, with a suggested fix. Adds a few extra model calls.")
 
+        eval_job = st.session_state.get("eval_job")
+        eval_running = bool(eval_job and eval_job["status"] == "running")
+
         can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)  # noqa: E501
-        if st.button("▶️ Run evaluation", type="primary", disabled=not can_run):
+        if st.button("▶️ Run evaluation", type="primary", disabled=not can_run or eval_running):
             from agentprobe.pipeline import Pipeline
 
             # Apply the UI overrides onto the loaded config before running.
@@ -493,7 +541,7 @@ with tab_evaluate:
                     st.error("Please enter both username and password.")
                     st.stop()
 
-            # Load the questions from the chosen source.
+            # Load the questions from the chosen source (main thread; fast).
             if case_source == "Upload CSV/Excel":
                 try:
                     cases = cases_from_upload(csv_upload)
@@ -505,48 +553,76 @@ with tab_evaluate:
                     st.error("No usable rows found. The file needs a 'question' column "
                              "(and ideally 'expected_answer').")
                     st.stop()
-                st.info(f"Loaded {len(cases)} questions from {csv_upload.name}.")
             else:
                 cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
-            # Live per-record progress: sending fills the first 40%, grading the
-            # rest (grading is the slower, LLM-judge step).
-            st.markdown(f"Running **{len(cases)}** cases against **{target.name}**…")
-            prog = st.progress(0.0, text="Starting…")
-            live = st.empty()
-            live_rows: list[dict] = []
 
-            def on_execute(done, total):
-                prog.progress(min(0.4, 0.4 * done / total),
-                              text=f"Querying agent — {done}/{total} answered")
+            # Start the evaluation in a background thread so UI reruns can't stop it.
+            job = new_job()
+            job["total"] = len(cases)
+            st.session_state["eval_job"] = job
+            _analyze = analyze_failures
 
-            def on_grade(done, total, result):
-                prog.progress(0.4 + 0.6 * done / total,
-                              text=f"Grading — {done}/{total} (last: {result.verdict.value})")
-                live_rows.append({
-                    "case": result.case_id,
-                    "type": result.question_type.value,
-                    "verdict": result.verdict.value,
-                    "score": round(result.score, 2),
-                })
-                live.dataframe(live_rows, width='stretch', height=240)
+            def _run_eval():
+                try:
+                    def on_execute(done, total):
+                        job["exec_done"] = done
+                        job["phase"] = "querying"
 
-            try:
-                summary = Pipeline(settings).evaluate(
-                    target, cases=cases, analyze_failures=analyze_failures,
-                    on_execute=on_execute, on_grade=on_grade)
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Evaluation failed: {exc}")
-                st.stop()
-            prog.progress(1.0, text="Done")
+                    def on_grade(done, total, result):
+                        job["grade_done"] = done
+                        job["phase"] = "grading"
+                        job["rows"].append({
+                            "case": result.case_id, "type": result.question_type.value,
+                            "verdict": result.verdict.value, "score": round(result.score, 2)})
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Pass rate", f"{summary.pass_rate:.0%}")
-            m2.metric("Passed", summary.passed)
-            m3.metric("Failed", summary.failed)
-            m4.metric("Infra errors", summary.errors)
+                    summary = Pipeline(settings).evaluate(
+                        target, cases=cases, analyze_failures=_analyze,
+                        on_execute=on_execute, on_grade=on_grade)
+                    report = settings.reports_dir / summary.run_id / "report.html"
+                    job["result"] = {
+                        "summary": summary,
+                        "report_html": report.read_text(encoding="utf-8") if report.exists() else None,
+                        "report_path": str(report),
+                    }
+                    job["status"] = "done"
+                except Exception as exc:  # noqa: BLE001
+                    job["status"] = "error"
+                    job["error"] = str(exc)
 
-            report = settings.reports_dir / summary.run_id / "report.html"
-            if report.exists():
-                components.html(report.read_text(encoding="utf-8"), height=600, scrolling=True)
-                st.download_button("⬇️ Download HTML report", report.read_bytes(),
-                                   file_name="report.html", mime="text/html")
+            start_job(_run_eval)
+            st.rerun()
+
+        # Progress / result area for evaluation (polls while the thread runs).
+        if eval_job:
+            total = eval_job["total"] or 1
+            if eval_job["status"] == "running":
+                if eval_job["phase"] == "grading":
+                    frac = 0.4 + 0.6 * eval_job["grade_done"] / total
+                    label = f"Grading — {eval_job['grade_done']}/{total}"
+                else:
+                    frac = min(0.4, 0.4 * eval_job["exec_done"] / total)
+                    label = f"Querying agent — {eval_job['exec_done']}/{total}"
+                st.progress(min(frac, 0.99), text=label)
+                st.caption("Running in the background — you can change settings without stopping it.")
+                if eval_job["rows"]:
+                    st.dataframe(eval_job["rows"], width='stretch', height=240)
+                time.sleep(0.7)
+                st.rerun()
+            elif eval_job["status"] == "error":
+                st.error(f"Evaluation failed: {eval_job['error']}")
+                if st.button("Clear", key="eval_clear_err"):
+                    del st.session_state["eval_job"]; st.rerun()
+            elif eval_job["status"] == "done":
+                res = eval_job["result"]
+                summary = res["summary"]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Pass rate", f"{summary.pass_rate:.0%}")
+                m2.metric("Passed", summary.passed)
+                m3.metric("Failed", summary.failed)
+                m4.metric("Infra errors", summary.errors)
+                if res["report_html"]:
+                    components.html(res["report_html"], height=600, scrolling=True)
+                    st.download_button("⬇️ Download HTML report", res["report_html"].encode("utf-8"),
+                                       file_name="report.html", mime="text/html")
+                if st.button("Run another", key="eval_clear_done"):
+                    del st.session_state["eval_job"]; st.rerun()
