@@ -10,6 +10,7 @@ excluded from the pass rate upstream.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from ..config import Settings, Thresholds
@@ -18,6 +19,8 @@ from ..llm.ollama_client import OllamaClient
 from .fact_coverage import check_fact_coverage
 from .groundedness import check_groundedness
 from .judge import LLMJudge
+
+logger = logging.getLogger(__name__)
 
 # Weights for the aggregate score. Fact coverage and judged correctness carry
 # the most weight; completeness and groundedness refine the margin.
@@ -59,8 +62,29 @@ class VerdictResolver:
             )
 
         coverage = check_fact_coverage(case.required_facts, response.answer)
-        judge = self.judge.score(case, response.answer)
         grounded = check_groundedness(case, response)
+
+        # The LLM judge can time out or error on a slow local model. Isolate that
+        # so one bad grading call doesn't crash the whole run: mark just this case
+        # as an ERROR (excluded from the pass rate) and keep going.
+        try:
+            judge = self.judge.score(case, response.answer)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("judge failed for case %s: %s", case.case_id, exc)
+            return GradedResult(
+                case_id=case.case_id,
+                question=case.question,
+                expected_answer=case.expected_answer,
+                agent_answer=response.answer,
+                verdict=Verdict.ERROR,
+                score=0.0,
+                fact_coverage=coverage,
+                groundedness_ok=grounded,
+                rationale=f"Grading error (judge unavailable): {exc}",
+                question_type=case.question_type,
+                latency_ms=response.latency_ms,
+                error_kind="judge_error",
+            )
 
         score = (
             _WEIGHTS["fact_coverage"] * coverage.ratio

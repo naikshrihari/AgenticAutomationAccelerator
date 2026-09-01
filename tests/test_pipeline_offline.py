@@ -82,6 +82,24 @@ def test_resolver_error_short_circuits(monkeypatch):
     assert result.error_kind == "timeout"
 
 
+def test_judge_failure_is_isolated_not_fatal():
+    """A judge error marks just that case ERROR instead of crashing the run."""
+    from agentprobe.grading.resolver import VerdictResolver
+    from agentprobe.models import AgentResponse
+
+    class _BoomJudge:
+        def score(self, case, answer):
+            raise TimeoutError("Ollama request failed: timed out")
+
+    resolver = VerdictResolver(judge=_BoomJudge())
+    case = TestCase(case_id="c1", question="q", expected_answer="a", required_facts=["x"])
+    resp = AgentResponse(case_id="c1", answer="some answer", ok=True)
+    result = resolver.grade(case, resp)
+    assert result.verdict is Verdict.ERROR
+    assert result.error_kind == "judge_error"
+    assert "timed out" in result.rationale
+
+
 def test_regression_differ_flags_flips():
     def graded(cid, verdict, score):
         return GradedResult(

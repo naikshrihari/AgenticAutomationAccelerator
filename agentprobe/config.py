@@ -40,7 +40,8 @@ class Settings(BaseModel):
     generation_temperature: float = 0.4
     judge_temperature: float = 0.0  # deterministic grading
 
-    request_timeout_s: float = 120.0
+    # Generous default: local judging on CPU can take minutes per call.
+    request_timeout_s: float = 600.0
 
     # Paths
     data_dir: Path = Path("data")
@@ -54,6 +55,7 @@ class Settings(BaseModel):
             generation_model=env.get("AGENTPROBE_GEN_MODEL", cls.model_fields["generation_model"].default),
             judge_model=env.get("AGENTPROBE_JUDGE_MODEL", cls.model_fields["judge_model"].default),
             embedding_model=env.get("AGENTPROBE_EMBED_MODEL", cls.model_fields["embedding_model"].default),
+            request_timeout_s=float(env.get("AGENTPROBE_TIMEOUT", cls.model_fields["request_timeout_s"].default)),
             data_dir=Path(env.get("AGENTPROBE_DATA_DIR", "data")),
         )
 
