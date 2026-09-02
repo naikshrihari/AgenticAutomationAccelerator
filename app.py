@@ -259,7 +259,7 @@ st.caption("AI Agent Test Automation Accelerator — generate a graded test set 
            "documents and evaluate an agent, all on local Ollama.")
 
 tab_generate, tab_redteam, tab_browse, tab_evaluate, tab_history = st.tabs(
-    ["① Generate questions", "🛡️ Red-team", "② Browse golden sets",
+    ["① Generate questions", "🛡️ Security & Safety", "② Browse evaluation sets",
      "③ Evaluate an agent", "④ History & trends"]
 )
 
@@ -397,7 +397,7 @@ with tab_generate:
         elif gen_job["status"] == "done":
             res = gen_job["result"]
             st.session_state["last_cases"] = res["cases"]
-            st.success(f"Saved golden set with {len(res['cases'])} questions to `{res['path']}`")
+            st.success(f"Saved evaluation set with {len(res['cases'])} questions to `{res['path']}`")
             del st.session_state["gen_job"]
 
     # Show the most recent result (persists across reruns)
@@ -420,10 +420,10 @@ with tab_generate:
 # Tab — Red-team (adversarial safety / compliance cases)
 # --------------------------------------------------------------------------- #
 with tab_redteam:
-    st.subheader("🛡️ Red-team / adversarial suite")
+    st.subheader("🛡️ Security & Safety Tests")
     st.write("Generate safety & compliance probes — PII leakage, prompt injection, "
              "jailbreak, unauthorized actions, bias — where a correct agent **refuses** "
-             "or escalates. Saved as a golden set you can run in the Evaluate tab.")
+             "or escalates. Saved as an evaluation set you can run in the Evaluate tab.")
 
     from agentprobe.adversarial import ATTACK_CATEGORIES
 
@@ -437,20 +437,20 @@ with tab_redteam:
                             help="0 = curated attacks only (instant). Higher = more "
                                  "variety, but calls the local model.")
 
-    if st.button("🛡️ Generate red-team set", type="primary", disabled=not rt_cats):
+    if st.button("🛡️ Generate security & safety tests", type="primary", disabled=not rt_cats):
         from agentprobe.pipeline import Pipeline
 
         settings = build_settings()
-        with st.spinner("Generating adversarial cases…"):
+        with st.spinner("Generating security & safety tests…"):
             try:
                 rt_cases = Pipeline(settings).build_redteam_set(
                     domain=rt_domain, categories=rt_cats,
                     llm_variants_per_category=int(rt_variants))
             except Exception as exc:  # noqa: BLE001
-                st.error(f"Red-team generation failed: {exc}")
+                st.error(f"Security & safety test generation failed: {exc}")
                 st.stop()
         st.session_state["last_cases"] = rt_cases
-        st.success(f"Generated **{len(rt_cases)}** adversarial cases and saved them as a golden set.")
+        st.success(f"Generated **{len(rt_cases)}** security & safety test cases and saved them as an evaluation set.")
         by_cat = {}
         for c in rt_cases:
             by_cat[c.attack_category] = by_cat.get(c.attack_category, 0) + 1
@@ -463,14 +463,14 @@ with tab_redteam:
 # Tab 2 — Browse existing golden sets
 # --------------------------------------------------------------------------- #
 with tab_browse:
-    st.subheader("Browse saved golden sets")
+    st.subheader("Browse saved evaluation sets")
     settings = build_settings()
     store = GoldenSetStore(settings.golden_dir)
     versions = store.versions()
     if not versions:
-        st.info(f"No golden sets found under `{settings.golden_dir}`. Generate one first.")
+        st.info(f"No evaluation sets found under `{settings.golden_dir}`. Generate one first.")
     else:
-        choice = st.selectbox("Golden set version", options=list(reversed(versions)))
+        choice = st.selectbox("Evaluation set version", options=list(reversed(versions)))
         if choice:
             cases = store.load(settings.golden_dir / choice)
             records = cases_to_records(cases)
@@ -484,8 +484,8 @@ with tab_browse:
 # Tab 3 — Evaluate an agent
 # --------------------------------------------------------------------------- #
 with tab_evaluate:
-    st.subheader("Evaluate an agent against a golden set")
-    st.write("Point a target config at your agent, then run the latest golden set against it. "
+    st.subheader("Evaluate an agent against an evaluation set")
+    st.write("Point a target config at your agent, then run the latest evaluation set against it. "
              "Grading (fact coverage + LLM judge) runs on Ollama.")
 
     config_files = sorted(str(p) for p in Path("config").glob("*.yaml")) if Path("config").exists() else []
@@ -499,17 +499,17 @@ with tab_evaluate:
         st.markdown("#### Questions to run")
         case_source = st.radio(
             "Question set",
-            ["Saved golden set", "Upload CSV/Excel"],
+            ["Saved evaluation set", "Upload CSV/Excel"],
             horizontal=True,
-            help="Use a golden set generated in tab ①, or upload your own CSV with "
+            help="Use an evaluation set generated in tab ①, or upload your own CSV with "
                  "question and expected_answer columns.",
         )
         golden_choice = None
         csv_upload = None
         mark_adversarial = False
-        if case_source == "Saved golden set":
-            golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
-            st.caption("Tip: a red-team set generated in the 🛡️ tab appears here and is "
+        if case_source == "Saved evaluation set":
+            golden_choice = st.selectbox("Evaluation set", options=list(reversed(versions)) or ["(none — generate first)"])
+            st.caption("Tip: a security & safety test set generated in the 🛡️ tab appears here and is "
                        "already graded on refusal.")
         else:
             csv_upload = st.file_uploader(
@@ -518,7 +518,7 @@ with tab_evaluate:
             st.caption("Required columns: question, expected_answer. Optional: "
                        "required_facts (';'-separated), question_type.")
             mark_adversarial = st.checkbox(
-                "🛡️ Treat these as red-team / adversarial (grade on refusal)",
+                "🛡️ Treat these as security & safety tests (grade on refusal)",
                 value=False,
                 help="Check this when your uploaded questions are attacks (PII, "
                      "injection, jailbreak…). The agent passes by refusing, not by "
@@ -579,7 +579,7 @@ with tab_evaluate:
         eval_job = st.session_state.get("eval_job")
         eval_running = bool(eval_job and eval_job["status"] == "running")
 
-        can_run = bool(golden_choice and versions) if case_source == "Saved golden set" else (csv_upload is not None)  # noqa: E501
+        can_run = bool(golden_choice and versions) if case_source == "Saved evaluation set" else (csv_upload is not None)  # noqa: E501
         if st.button("▶️ Run evaluation", type="primary", disabled=not can_run or eval_running):
             from agentprobe.pipeline import Pipeline
 

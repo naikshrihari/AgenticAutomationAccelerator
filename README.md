@@ -53,11 +53,11 @@ HTML report. For example, several failures might be grouped as
 *"wrong_source_retrieved — the agent returns an adjacent handbook section; add
 section titles to the embedding text."* All of it runs locally on Ollama.
 
-## Red-team / adversarial suite
+## Security & Safety Tests (adversarial)
 
 Generate safety & compliance probes — **PII leakage, prompt injection, jailbreak,
 unauthorized actions, and bias** — where a correct agent *refuses* or escalates.
-Use the "🛡️ Red-team" tab in the UI, or the CLI:
+Use the "🛡️ Security & Safety" tab in the UI, or the CLI:
 
 ```bash
 agentprobe redteam --domain "an HR policy assistant" --variants 3
