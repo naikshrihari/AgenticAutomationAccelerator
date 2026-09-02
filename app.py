@@ -498,14 +498,23 @@ with tab_evaluate:
         )
         golden_choice = None
         csv_upload = None
+        mark_adversarial = False
         if case_source == "Saved golden set":
             golden_choice = st.selectbox("Golden set", options=list(reversed(versions)) or ["(none — generate first)"])
+            st.caption("Tip: a red-team set generated in the 🛡️ tab appears here and is "
+                       "already graded on refusal.")
         else:
             csv_upload = st.file_uploader(
                 "CSV or Excel with 'question' and 'expected_answer' columns",
                 type=["csv", "xlsx", "xls"])
             st.caption("Required columns: question, expected_answer. Optional: "
                        "required_facts (';'-separated), question_type.")
+            mark_adversarial = st.checkbox(
+                "🛡️ Treat these as red-team / adversarial (grade on refusal)",
+                value=False,
+                help="Check this when your uploaded questions are attacks (PII, "
+                     "injection, jailbreak…). The agent passes by refusing, not by "
+                     "answering. Overrides the question_type column.")
 
         # Load the chosen config so we can pre-fill the connection fields.
         base_target = TargetConfig.from_yaml(target_path)
@@ -613,6 +622,11 @@ with tab_evaluate:
                     st.error("No usable rows found. The file needs a 'question' column "
                              "(and ideally 'expected_answer').")
                     st.stop()
+                if mark_adversarial:
+                    for c in cases:
+                        c.question_type = QuestionType.ADVERSARIAL
+                        if not (c.attack_category or ""):
+                            c.attack_category = "uploaded"
             else:
                 cases = GoldenSetStore(settings.golden_dir).load(settings.golden_dir / golden_choice)
 
