@@ -1,4 +1,4 @@
-"""Typed data models that flow through the AgentProbe pipeline.
+"""Typed data models that flow through the Agentic Assurance Accelerator pipeline.
 
 Every stage exchanges these Pydantic models so that the boundaries between
 ingestion, generation, execution, grading, and reporting stay explicit and

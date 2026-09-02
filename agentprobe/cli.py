@@ -1,4 +1,4 @@
-"""Command-line interface for AgentProbe.
+"""Command-line interface for Agentic Assurance Accelerator.
 
 Three subcommands mirror the pipeline's two halves plus a convenience 'all':
 

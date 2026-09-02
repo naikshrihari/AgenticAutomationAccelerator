@@ -1,4 +1,4 @@
-# AgentProbe — AI Agent Test Automation Accelerator
+# Agentic Assurance Accelerator — AI Agent Test Automation Accelerator
 
 A Python pipeline that reads your source documents, **generates a graded test
 set**, runs it against a **target AI agent** through a platform connector, and
@@ -44,7 +44,7 @@ and config** — nothing in the core is platform-specific.
 
 ## Root-cause analysis (why did it fail?)
 
-Beyond pass/fail, AgentProbe can explain **why** cases failed. Enable it with the
+Beyond pass/fail, Agentic Assurance Accelerator can explain **why** cases failed. Enable it with the
 "🔎 Analyze failures" checkbox in the UI's Evaluate tab, or `--analyze` on the
 CLI. It embeds each failure, clusters similar ones together, and asks the local
 judge model to diagnose each cluster — producing a **category, likely cause, and

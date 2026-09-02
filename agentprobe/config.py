@@ -1,6 +1,6 @@
 """Configuration models and loaders.
 
-Two kinds of config exist in AgentProbe:
+Two kinds of config exist in Agentic Assurance Accelerator:
 
 * :class:`Settings` — global knobs (Ollama endpoint, model names, paths). Read
   from environment variables so the same code runs on a laptop and in CI.

@@ -121,8 +121,8 @@ def _render_fallback(context: dict) -> str:
         for r in context["results"]
     )
     return (
-        f"<html><head><meta charset='utf-8'><title>AgentProbe — {s.target}</title></head>"
-        f"<body><h1>AgentProbe report: {s.target}</h1>"
+        f"<html><head><meta charset='utf-8'><title>Agentic Assurance Accelerator — {s.target}</title></head>"
+        f"<body><h1>Agentic Assurance Accelerator report: {s.target}</h1>"
         f"<p>Pass rate: {s.pass_rate:.1%} — {s.passed} pass / {s.partial} partial / "
         f"{s.failed} fail / {s.errors} error (of {s.total})</p>"
         f"<table border='1' cellpadding='4'><tr><th>Case</th><th>Type</th>"

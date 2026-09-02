@@ -1,4 +1,4 @@
-"""AgentProbe web UI (Streamlit).
+"""Agentic Assurance Accelerator web UI (Streamlit).
 
 A local, no-terminal front end for the accelerator. Upload one or more source
 documents, generate the graded question / expected-answer set on Ollama, browse
@@ -42,7 +42,7 @@ from agentprobe.ingestion.loaders import SUPPORTED_SUFFIXES, load_document
 from agentprobe.llm import EmbeddingModel, OllamaClient
 from agentprobe.models import QuestionType
 
-st.set_page_config(page_title="AgentProbe", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="Agentic Assurance Accelerator", page_icon="🧪", layout="wide")
 
 
 # --------------------------------------------------------------------------- #
@@ -279,7 +279,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------- #
 # Main — tabs
 # --------------------------------------------------------------------------- #
-st.title("🧪 AgentProbe")
+st.title("🧪 Agentic Assurance Accelerator")
 st.caption("AI Agent Test Automation Accelerator — generate a graded test set from your "
            "documents and evaluate an agent, all on local Ollama.")
 

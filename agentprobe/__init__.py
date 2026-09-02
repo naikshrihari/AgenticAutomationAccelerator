@@ -1,4 +1,4 @@
-"""AgentProbe — AI Agent Test Automation Accelerator.
+"""Agentic Assurance Accelerator — AI Agent Test Automation Accelerator.
 
 A Python pipeline that reads source documents, generates a graded test set,
 runs it against a target AI agent through a platform connector, and reports the

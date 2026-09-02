@@ -9,7 +9,7 @@ dist/
 venv/
 .pytest_cache/
 
-# AgentProbe runtime data (golden sets, results DB, generated reports)
+# Agentic Assurance Accelerator runtime data (golden sets, results DB, generated reports)
 data/
 *.duckdb
 *.db
