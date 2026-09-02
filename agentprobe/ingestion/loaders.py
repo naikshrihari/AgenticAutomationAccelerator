@@ -65,9 +65,12 @@ def load_folder(folder: str | Path) -> list[LoadedDocument]:
 # --------------------------------------------------------------------------- #
 def _load_pdf(path: Path) -> tuple[str, list[tuple[str, int]]]:
     try:
-        import fitz  # PyMuPDF
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError("PyMuPDF is required to load PDFs: pip install pymupdf") from exc
+        import pymupdf as fitz  # modern PyMuPDF module name
+    except ImportError:
+        try:
+            import fitz  # older PyMuPDF exposes the same API as 'fitz'
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError("PyMuPDF is required to load PDFs: pip install pymupdf") from exc
     parts: list[str] = []
     headings: list[tuple[str, int]] = []
     with fitz.open(path) as doc:
