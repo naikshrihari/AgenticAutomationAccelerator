@@ -194,19 +194,27 @@ def cases_from_upload(uploaded) -> list:
 
 
 def cases_to_records(cases) -> list[dict]:
-    """Flatten test cases into rows for a table / CSV."""
-    return [
-        {
+    """Flatten test cases into rows for a table / CSV.
+
+    Includes an attack_category column only when at least one case is a red-team
+    case, so ordinary golden sets aren't cluttered with an empty column.
+    """
+    has_adversarial = any(getattr(c, "attack_category", None) for c in cases)
+    rows = []
+    for c in cases:
+        row = {
             "question": c.question,
             "expected_answer": c.expected_answer,
             "type": c.question_type.value,
             "difficulty": c.difficulty.value,
             "language": c.language,
-            "citation": c.citation,
-            "required_facts": " | ".join(c.required_facts),
         }
-        for c in cases
-    ]
+        if has_adversarial:
+            row["attack_category"] = getattr(c, "attack_category", None) or ""
+        row["citation"] = c.citation
+        row["required_facts"] = " | ".join(c.required_facts)
+        rows.append(row)
+    return rows
 
 
 def records_to_csv(records: list[dict]) -> bytes:
