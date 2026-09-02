@@ -105,6 +105,24 @@ class ResultsStore:
         )
         return [GradedResult.model_validate_json(row[0]) for row in cur.fetchall()]
 
+    def list_runs(self, target: Optional[str] = None, limit: int = 200) -> list[dict]:
+        """Return past runs (newest first) as dicts, for the history dashboard."""
+        cols = ["run_id", "target", "total", "passed", "partial", "failed",
+                "errors", "pass_rate", "started_at", "finished_at"]
+        if target:
+            cur = self._conn.execute(
+                f"SELECT {', '.join(cols)} FROM runs WHERE target = {self._ph(1)} "
+                f"ORDER BY started_at DESC LIMIT {int(limit)}", (target,))
+        else:
+            cur = self._conn.execute(
+                f"SELECT {', '.join(cols)} FROM runs ORDER BY started_at DESC LIMIT {int(limit)}")
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def targets(self) -> list[str]:
+        """Distinct target names that have runs stored."""
+        cur = self._conn.execute("SELECT DISTINCT target FROM runs ORDER BY target")
+        return [row[0] for row in cur.fetchall()]
+
     def latest_run_id(self, target: str, before: Optional[str] = None) -> Optional[str]:
         if before:
             cur = self._conn.execute(

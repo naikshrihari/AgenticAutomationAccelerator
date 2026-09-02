@@ -32,6 +32,7 @@ class QuestionType(str, Enum):
     OUT_OF_SCOPE = "out_of_scope"
     PARAPHRASE = "paraphrase"
     BILINGUAL = "bilingual"
+    ADVERSARIAL = "adversarial"  # red-team: PII, injection, jailbreak, bias, etc.
 
 
 class Difficulty(str, Enum):
@@ -98,6 +99,8 @@ class TestCase(BaseModel):
     question_type: QuestionType = QuestionType.FACTUAL
     difficulty: Difficulty = Difficulty.MEDIUM
     language: str = "en"
+    # Red-team attack category (e.g. "pii_leakage"), set for adversarial cases.
+    attack_category: Optional[str] = None
 
     # Provenance / review
     generated_by: str = ""  # model name

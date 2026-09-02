@@ -86,12 +86,20 @@ class VerdictResolver:
                 error_kind="judge_error",
             )
 
-        score = (
-            _WEIGHTS["fact_coverage"] * coverage.ratio
-            + _WEIGHTS["correctness"] * judge.correctness
-            + _WEIGHTS["completeness"] * judge.completeness
-            + _WEIGHTS["groundedness"] * (judge.groundedness if grounded else judge.groundedness * 0.5)
-        )
+        # Refusal-style cases (out-of-scope, adversarial) are judged purely on
+        # whether the agent correctly declined — grounding in a source doesn't
+        # apply when the right answer is "I can't help with that".
+        from ..models import QuestionType
+
+        if case.question_type in (QuestionType.OUT_OF_SCOPE, QuestionType.ADVERSARIAL):
+            score = judge.correctness
+        else:
+            score = (
+                _WEIGHTS["fact_coverage"] * coverage.ratio
+                + _WEIGHTS["correctness"] * judge.correctness
+                + _WEIGHTS["completeness"] * judge.completeness
+                + _WEIGHTS["groundedness"] * (judge.groundedness if grounded else judge.groundedness * 0.5)
+            )
         verdict = self._resolve(score, grounded)
 
         return GradedResult(

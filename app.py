@@ -250,8 +250,9 @@ st.title("🧪 AgentProbe")
 st.caption("AI Agent Test Automation Accelerator — generate a graded test set from your "
            "documents and evaluate an agent, all on local Ollama.")
 
-tab_generate, tab_browse, tab_evaluate = st.tabs(
-    ["① Generate questions", "② Browse golden sets", "③ Evaluate an agent"]
+tab_generate, tab_redteam, tab_browse, tab_evaluate, tab_history = st.tabs(
+    ["① Generate questions", "🛡️ Red-team", "② Browse golden sets",
+     "③ Evaluate an agent", "④ History & trends"]
 )
 
 # --------------------------------------------------------------------------- #
@@ -405,6 +406,49 @@ with tab_generate:
         c2.download_button("⬇️ Download JSONL", jsonl,
                            file_name="golden_set.jsonl", mime="application/json",
                            width='stretch')
+
+
+# --------------------------------------------------------------------------- #
+# Tab — Red-team (adversarial safety / compliance cases)
+# --------------------------------------------------------------------------- #
+with tab_redteam:
+    st.subheader("🛡️ Red-team / adversarial suite")
+    st.write("Generate safety & compliance probes — PII leakage, prompt injection, "
+             "jailbreak, unauthorized actions, bias — where a correct agent **refuses** "
+             "or escalates. Saved as a golden set you can run in the Evaluate tab.")
+
+    from agentprobe.adversarial import ATTACK_CATEGORIES
+
+    rt_domain = st.text_input("Agent domain (seeds realistic variants)",
+                              value="a company HR policy assistant")
+    cat_labels = {c.key: c.title for c in ATTACK_CATEGORIES}
+    rt_cats = st.multiselect("Attack categories", options=list(cat_labels.keys()),
+                             default=list(cat_labels.keys()),
+                             format_func=lambda k: cat_labels[k])
+    rt_variants = st.slider("Extra LLM-generated prompts per category", 0, 5, 0,
+                            help="0 = curated attacks only (instant). Higher = more "
+                                 "variety, but calls the local model.")
+
+    if st.button("🛡️ Generate red-team set", type="primary", disabled=not rt_cats):
+        from agentprobe.pipeline import Pipeline
+
+        settings = build_settings()
+        with st.spinner("Generating adversarial cases…"):
+            try:
+                rt_cases = Pipeline(settings).build_redteam_set(
+                    domain=rt_domain, categories=rt_cats,
+                    llm_variants_per_category=int(rt_variants))
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Red-team generation failed: {exc}")
+                st.stop()
+        st.session_state["last_cases"] = rt_cases
+        st.success(f"Generated **{len(rt_cases)}** adversarial cases and saved them as a golden set.")
+        by_cat = {}
+        for c in rt_cases:
+            by_cat[c.attack_category] = by_cat.get(c.attack_category, 0) + 1
+        st.write("By category:", by_cat)
+        st.dataframe([{"category": c.attack_category, "attack": c.question} for c in rt_cases],
+                     width='stretch', height=320)
 
 
 # --------------------------------------------------------------------------- #
@@ -657,3 +701,59 @@ with tab_evaluate:
                                        file_name="report.html", mime="text/html")
                 if st.button("Run another", key="eval_clear_done"):
                     del st.session_state["eval_job"]; st.rerun()
+
+
+# --------------------------------------------------------------------------- #
+# Tab — History & trends
+# --------------------------------------------------------------------------- #
+with tab_history:
+    st.subheader("④ History & trends")
+    st.write("Every evaluation is stored locally. Track how an agent's pass rate "
+             "moves over time and spot regressions across runs.")
+
+    settings = build_settings()
+    from agentprobe.reporting.store import ResultsStore
+
+    db_path = settings.results_dir / "results.db"
+    if not db_path.exists():
+        st.info("No runs recorded yet. Run an evaluation first (tab ③).")
+    else:
+        store = ResultsStore(db_path)
+        targets = store.targets()
+        pick = st.selectbox("Target", options=["(all)"] + targets)
+        runs = store.list_runs(None if pick == "(all)" else pick)
+        store.close()
+
+        if not runs:
+            st.info("No runs for this target yet.")
+        else:
+            # Trend chart: pass rate over time (oldest → newest).
+            try:
+                import pandas as pd
+
+                df = pd.DataFrame(runs)
+                df["started_at"] = pd.to_datetime(df["started_at"])
+                df = df.sort_values("started_at")
+                chart = df.pivot_table(index="started_at", columns="target",
+                                       values="pass_rate", aggfunc="last")
+                st.markdown("#### Pass rate over time")
+                st.line_chart(chart)
+
+                latest = df.iloc[-1]
+                prev = df.iloc[-2] if len(df) > 1 else None
+                m1, m2, m3 = st.columns(3)
+                delta = (f"{(latest['pass_rate'] - prev['pass_rate']):+.0%}" if prev is not None else None)
+                m1.metric("Latest pass rate", f"{latest['pass_rate']:.0%}", delta)
+                m2.metric("Total runs", len(df))
+                m3.metric("Avg pass rate", f"{df['pass_rate'].mean():.0%}")
+            except ImportError:
+                st.caption("Install pandas for the trend chart: pip install pandas")
+
+            st.markdown("#### Run history")
+            st.dataframe(
+                [{"run_id": r["run_id"], "target": r["target"],
+                  "pass_rate": f"{r['pass_rate']:.0%}", "passed": r["passed"],
+                  "partial": r["partial"], "failed": r["failed"],
+                  "errors": r["errors"], "total": r["total"],
+                  "started_at": r["started_at"]} for r in runs],
+                width='stretch', height=360)

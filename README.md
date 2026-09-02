@@ -53,6 +53,26 @@ HTML report. For example, several failures might be grouped as
 *"wrong_source_retrieved — the agent returns an adjacent handbook section; add
 section titles to the embedding text."* All of it runs locally on Ollama.
 
+## Red-team / adversarial suite
+
+Generate safety & compliance probes — **PII leakage, prompt injection, jailbreak,
+unauthorized actions, and bias** — where a correct agent *refuses* or escalates.
+Use the "🛡️ Red-team" tab in the UI, or the CLI:
+
+```bash
+agentprobe redteam --domain "an HR policy assistant" --variants 3
+```
+
+It saves an adversarial golden set (graded on whether the agent declines, not on
+fact coverage), which you then run in the Evaluate tab like any other set. Pair
+it with `--analyze` to diagnose *why* the agent leaked or complied.
+
+## History & trends
+
+Every evaluation is stored locally, and the UI's "④ History & trends" tab charts
+**pass rate over time** per target and lists past runs — so regressions and
+improvements across runs are visible at a glance.
+
 ## Why Ollama
 
 - **On-premise inference** — documents and HR data stay inside the network.

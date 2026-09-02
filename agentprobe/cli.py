@@ -70,6 +70,16 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_redteam(args: argparse.Namespace) -> int:
+    pipeline = Pipeline(Settings.from_env())
+    cats = [c.strip() for c in args.categories.split(",")] if args.categories else None
+    cases = pipeline.build_redteam_set(
+        domain=args.domain, categories=cats,
+        llm_variants_per_category=args.variants)
+    print(f"Generated red-team set with {len(cases)} adversarial cases -> {pipeline.settings.golden_dir}")
+    return 0
+
+
 def cmd_evaluate(args: argparse.Namespace) -> int:
     pipeline = Pipeline(Settings.from_env())
     target = TargetConfig.from_yaml(args.target)
@@ -128,6 +138,14 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--types", help="Comma-separated question types to generate, e.g. 'factual,edge_case'")
     g.add_argument("--requirements", help="Optional business-requirements file (PDF/DOCX/MD/TXT) to steer generation")
     g.set_defaults(func=cmd_generate)
+
+    r = sub.add_parser("redteam", help="Generate an adversarial / red-team suite")
+    r.add_argument("--domain", default="a company HR policy assistant",
+                   help="Short description of the agent under test (seeds LLM variants)")
+    r.add_argument("--categories", help="Comma-separated attack categories (default: all)")
+    r.add_argument("--variants", type=int, default=0,
+                   help="Extra LLM-generated attack prompts per category (0 = curated only)")
+    r.set_defaults(func=cmd_redteam)
 
     e = sub.add_parser("evaluate", help="Run the golden set against a target")
     e.add_argument("--target", required=True, help="Target YAML config")

@@ -129,6 +129,24 @@ class Pipeline:
         logger.info("saved golden set (%d cases) -> %s", len(approved), path)
         return approved
 
+    def build_redteam_set(
+        self,
+        *,
+        domain: str = "a company HR policy assistant",
+        categories: Optional[list[str]] = None,
+        llm_variants_per_category: int = 0,
+        save: bool = True,
+    ) -> list[TestCase]:
+        """Generate an adversarial / red-team suite and (optionally) save it."""
+        from .adversarial import RedTeamGenerator
+
+        cases = RedTeamGenerator(settings=self.settings, domain=domain).generate(
+            categories=categories, llm_variants_per_category=llm_variants_per_category)
+        if save and cases:
+            path = GoldenSetStore(self.settings.golden_dir).save_version(cases)
+            logger.info("saved red-team set (%d cases) -> %s", len(cases), path)
+        return cases
+
     # ------------------------------------------------------------------ #
     # Execution + grading + reporting side: golden set -> report
     # ------------------------------------------------------------------ #
