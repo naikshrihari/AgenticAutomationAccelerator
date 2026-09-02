@@ -122,53 +122,27 @@ def start_job(fn) -> None:
 
 
 def review_and_save(cases, settings, state_key: str) -> None:
-    """Show a review table where the user accepts/rejects (and edits) generated
-    cases; only accepted ones are saved as an evaluation set."""
-    import pandas as pd
+    """Show the generated cases and let the user Accept or Reject the whole set.
 
-    is_adv = any(getattr(c, "attack_category", None) for c in cases)
-    rows = []
-    for c in cases:
-        row = {"accept": True, "question": c.question, "expected_answer": c.expected_answer,
-               "type": c.question_type.value}
-        if is_adv:
-            row["attack_category"] = c.attack_category or ""
-        rows.append(row)
-    df = pd.DataFrame(rows)
-
-    st.markdown(f"### Review {len(cases)} generated cases")
-    st.caption("Uncheck **accept** to reject a case. You can also edit the question or "
-               "expected answer inline. Only accepted cases are saved to the evaluation "
-               "set (and become visible in the Browse tab).")
-    disabled_cols = ["type"] + (["attack_category"] if is_adv else [])
-    edited = st.data_editor(
-        df, width="stretch", height=420, num_rows="fixed", disabled=disabled_cols,
-        column_config={"accept": st.column_config.CheckboxColumn("accept", default=True)},
-        key=state_key + "_editor")
-
-    try:
-        n_accept = int(edited["accept"].sum())
-    except Exception:  # noqa: BLE001
-        n_accept = 0
+    Accept → saved as an evaluation set (visible in Browse). Reject → discarded.
+    """
+    st.markdown(f"### Review generated cases ({len(cases)})")
+    st.caption("Review the generated cases below, then **Accept** to save them as an "
+               "evaluation set (they'll appear in the Browse tab) or **Reject** to discard.")
+    st.dataframe(cases_to_records(cases), width="stretch", height=420)
 
     c1, c2 = st.columns(2)
-    if c1.button(f"✅ Save {n_accept} accepted", type="primary",
-                 key=state_key + "_save", disabled=n_accept == 0):
-        accepted = []
-        for i, case in enumerate(cases):
-            row = edited.iloc[i]
-            if bool(row["accept"]):
-                case.question = str(row["question"]).strip()
-                case.expected_answer = str(row["expected_answer"]).strip()
-                case.approved = True
-                accepted.append(case)
-        path = GoldenSetStore(settings.golden_dir).save_version(accepted)
+    if c1.button("✅ Accept — save to evaluation set", type="primary", key=state_key + "_accept"):
+        for c in cases:
+            c.approved = True
+        path = GoldenSetStore(settings.golden_dir).save_version(cases)
         st.session_state.pop(state_key, None)
-        st.success(f"Saved **{len(accepted)}** accepted cases to `{path}`. "
+        st.success(f"Accepted and saved **{len(cases)}** cases to `{path}`. "
                    "Find it in the ② Browse evaluation sets tab.")
         st.rerun()
-    if c2.button("🗑️ Discard all", key=state_key + "_discard"):
+    if c2.button("❌ Reject — discard", key=state_key + "_reject"):
         st.session_state.pop(state_key, None)
+        st.info("Rejected — the generated cases were discarded and not saved.")
         st.rerun()
 
 
