@@ -431,15 +431,21 @@ with tab_redteam:
 
     from agentprobe.adversarial import ATTACK_CATEGORIES
 
-    rt_domain = st.text_input("Agent domain (seeds realistic variants)",
-                              value="a company HR policy assistant")
     cat_labels = {c.key: c.title for c in ATTACK_CATEGORIES}
     rt_cats = st.multiselect("Attack categories", options=list(cat_labels.keys()),
                              default=list(cat_labels.keys()),
                              format_func=lambda k: cat_labels[k])
-    rt_variants = st.slider("Extra LLM-generated prompts per category", 0, 5, 0,
-                            help="0 = curated attacks only (instant). Higher = more "
-                                 "variety, but calls the local model.")
+    rt_variants = st.slider("Extra domain-specific attacks per category (via local model)", 0, 5, 0,
+                            help="0 = curated universal attacks only (instant, same for "
+                                 "every domain). Higher = the model writes extra attacks "
+                                 "tailored to the domain below.")
+    rt_domain = st.text_input(
+        "Agent domain (only used for the extra attacks above)",
+        value="a company HR policy assistant",
+        disabled=(rt_variants == 0))
+    if rt_variants == 0:
+        st.caption("ℹ️ The 25 curated attacks are universal safety probes — identical for "
+                   "every domain. Set the slider above 0 to add domain-specific attacks.")
 
     if st.button("🛡️ Generate security & safety tests", type="primary", disabled=not rt_cats):
         from agentprobe.pipeline import Pipeline
