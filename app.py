@@ -320,6 +320,9 @@ with tab_generate:
             st.error("Pick at least one question type.")
             st.stop()
 
+        # Clear the previous result so a stale table isn't shown during the run.
+        st.session_state.pop("gen_last_cases", None)
+
         # Save uploads on the main thread; parse/generate in the worker thread.
         doc_paths = save_uploads_to_tmp(files)
         req_path = save_uploads_to_tmp([req_file])[0] if req_file else None
@@ -396,13 +399,14 @@ with tab_generate:
                 del st.session_state["gen_job"]; st.rerun()
         elif gen_job["status"] == "done":
             res = gen_job["result"]
-            st.session_state["last_cases"] = res["cases"]
+            st.session_state["gen_last_cases"] = res["cases"]
             st.success(f"Saved evaluation set with {len(res['cases'])} questions to `{res['path']}`")
             del st.session_state["gen_job"]
 
-    # Show the most recent result (persists across reruns)
-    if st.session_state.get("last_cases"):
-        cases = st.session_state["last_cases"]
+    # Show this tab's most recent result (its own slot, not shared with the
+    # Security & Safety tab).
+    if st.session_state.get("gen_last_cases"):
+        cases = st.session_state["gen_last_cases"]
         records = cases_to_records(cases)
         st.markdown(f"### Generated questions ({len(records)})")
         st.dataframe(records, width='stretch', height=400)
@@ -449,7 +453,6 @@ with tab_redteam:
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Security & safety test generation failed: {exc}")
                 st.stop()
-        st.session_state["last_cases"] = rt_cases
         st.success(f"Generated **{len(rt_cases)}** security & safety test cases and saved them as an evaluation set.")
         by_cat = {}
         for c in rt_cases:
