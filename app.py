@@ -121,6 +121,57 @@ def start_job(fn) -> None:
     threading.Thread(target=fn, daemon=True).start()
 
 
+def review_and_save(cases, settings, state_key: str) -> None:
+    """Show a review table where the user accepts/rejects (and edits) generated
+    cases; only accepted ones are saved as an evaluation set."""
+    import pandas as pd
+
+    is_adv = any(getattr(c, "attack_category", None) for c in cases)
+    rows = []
+    for c in cases:
+        row = {"accept": True, "question": c.question, "expected_answer": c.expected_answer,
+               "type": c.question_type.value}
+        if is_adv:
+            row["attack_category"] = c.attack_category or ""
+        rows.append(row)
+    df = pd.DataFrame(rows)
+
+    st.markdown(f"### Review {len(cases)} generated cases")
+    st.caption("Uncheck **accept** to reject a case. You can also edit the question or "
+               "expected answer inline. Only accepted cases are saved to the evaluation "
+               "set (and become visible in the Browse tab).")
+    disabled_cols = ["type"] + (["attack_category"] if is_adv else [])
+    edited = st.data_editor(
+        df, width="stretch", height=420, num_rows="fixed", disabled=disabled_cols,
+        column_config={"accept": st.column_config.CheckboxColumn("accept", default=True)},
+        key=state_key + "_editor")
+
+    try:
+        n_accept = int(edited["accept"].sum())
+    except Exception:  # noqa: BLE001
+        n_accept = 0
+
+    c1, c2 = st.columns(2)
+    if c1.button(f"✅ Save {n_accept} accepted", type="primary",
+                 key=state_key + "_save", disabled=n_accept == 0):
+        accepted = []
+        for i, case in enumerate(cases):
+            row = edited.iloc[i]
+            if bool(row["accept"]):
+                case.question = str(row["question"]).strip()
+                case.expected_answer = str(row["expected_answer"]).strip()
+                case.approved = True
+                accepted.append(case)
+        path = GoldenSetStore(settings.golden_dir).save_version(accepted)
+        st.session_state.pop(state_key, None)
+        st.success(f"Saved **{len(accepted)}** accepted cases to `{path}`. "
+                   "Find it in the ② Browse evaluation sets tab.")
+        st.rerun()
+    if c2.button("🗑️ Discard all", key=state_key + "_discard"):
+        st.session_state.pop(state_key, None)
+        st.rerun()
+
+
 def extract_requirements(req_file) -> str | None:
     """Read an optional uploaded business-requirements file into plain text."""
     if req_file is None:
@@ -364,9 +415,9 @@ with tab_generate:
                 if _do_dedupe and cases:
                     job["phase"] = "deduping"
                     cases = Deduplicator(EmbeddingModel(settings), settings).dedupe(cases)
-                cases = ReviewGate().run(cases)
-                saved_path = GoldenSetStore(settings.golden_dir).save_version(cases)
-                job["result"] = {"cases": cases, "path": str(saved_path)}
+                # Do NOT auto-save: hand the cases to the review gate in the UI so
+                # the user accepts/rejects before anything enters an evaluation set.
+                job["result"] = {"cases": cases}
                 job["status"] = "done"
             except Exception as exc:  # noqa: BLE001
                 job["status"] = "error"
@@ -399,25 +450,12 @@ with tab_generate:
                 del st.session_state["gen_job"]; st.rerun()
         elif gen_job["status"] == "done":
             res = gen_job["result"]
-            st.session_state["gen_last_cases"] = res["cases"]
-            st.success(f"Saved evaluation set with {len(res['cases'])} questions to `{res['path']}`")
+            st.session_state["gen_pending"] = res["cases"]  # hold for manual review
             del st.session_state["gen_job"]
 
-    # Show this tab's most recent result (its own slot, not shared with the
-    # Security & Safety tab).
-    if st.session_state.get("gen_last_cases"):
-        cases = st.session_state["gen_last_cases"]
-        records = cases_to_records(cases)
-        st.markdown(f"### Generated questions ({len(records)})")
-        st.dataframe(records, width='stretch', height=400)
-
-        jsonl = "\n".join(c.model_dump_json() for c in cases).encode("utf-8")
-        c1, c2 = st.columns(2)
-        c1.download_button("⬇️ Download CSV", records_to_csv(records),
-                           file_name="questions.csv", mime="text/csv", width='stretch')
-        c2.download_button("⬇️ Download JSONL", jsonl,
-                           file_name="golden_set.jsonl", mime="application/json",
-                           width='stretch')
+    # Manual review gate: accept/reject before anything is saved.
+    if st.session_state.get("gen_pending"):
+        review_and_save(st.session_state["gen_pending"], build_settings(), "gen_pending")
 
 
 # --------------------------------------------------------------------------- #
@@ -453,19 +491,18 @@ with tab_redteam:
         settings = build_settings()
         with st.spinner("Generating security & safety tests…"):
             try:
+                # save=False: hold for manual review before saving.
                 rt_cases = Pipeline(settings).build_redteam_set(
                     domain=rt_domain, categories=rt_cats,
-                    llm_variants_per_category=int(rt_variants))
+                    llm_variants_per_category=int(rt_variants), save=False)
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Security & safety test generation failed: {exc}")
                 st.stop()
-        st.success(f"Generated **{len(rt_cases)}** security & safety test cases and saved them as an evaluation set.")
-        by_cat = {}
-        for c in rt_cases:
-            by_cat[c.attack_category] = by_cat.get(c.attack_category, 0) + 1
-        st.write("By category:", by_cat)
-        st.dataframe([{"category": c.attack_category, "attack": c.question} for c in rt_cases],
-                     width='stretch', height=320)
+        st.session_state["rt_pending"] = rt_cases
+
+    # Manual review gate for the security & safety tests.
+    if st.session_state.get("rt_pending"):
+        review_and_save(st.session_state["rt_pending"], build_settings(), "rt_pending")
 
 
 # --------------------------------------------------------------------------- #
