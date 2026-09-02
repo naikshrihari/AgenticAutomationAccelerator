@@ -762,9 +762,13 @@ with tab_history:
     else:
         store = ResultsStore(db_path)
         targets = store.targets()
-        pick = st.selectbox("Target", options=["(all)"] + targets)
-        runs = store.list_runs(None if pick == "(all)" else pick)
+        pick = st.selectbox("Target", options=["(all)"] + targets, key="hist_target")
+        runs = store.list_runs()  # fetch all, then filter in pandas (defensive)
         store.close()
+
+        # Filter to the selected target so the chart, metrics, and table agree.
+        if pick != "(all)":
+            runs = [r for r in runs if r["target"] == pick]
 
         if not runs:
             st.info("No runs for this target yet.")
